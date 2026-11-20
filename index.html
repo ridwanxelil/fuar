@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<!--
+RX-PROGRESS v1
+Proje: Fuar Satış
+Klasor: fuar-satis | Tur: tek dosya HTML (Tailwind CSS CDN, saf JavaScript) | Surum: 1.2.0
+Tamamlanan: 1. Temel: liste yükleme + eşleştirme, arama, barkod okuyucu, sepet, indirim, onay, satış kayıtları — v1.0.0 — 2026-11-21; 2. Kamerayla barkod tarama + örnek veri (datanu.xlsx) — v1.1.0 — 2026-11-21
+Siradaki: 3. Ödeme türü (nakit/kart), rapor (günlük ciro, en çok satanlar), CSV/Excel dışa aktarma, yedek al / yedekten yükle
+Kalan: yok
+Kararlar: Veri dosyası CSV (; , veya sekme ayraçlı, UTF-8 / Windows-1254) ya da Excel (.xlsx/.xls, SheetJS CDN) olabilir.; Sütun eşleştirme ekranı vardır; seçim başlık adına göre hatırlanır.; Tek arama kutusu hem barkod okuyucu (klavye gibi çalışan, Enter ile biten) hem arama içindir.; Listede olmayan barkod: elle ad ve fiyat girilerek sepete eklenebilir (listeye eklenmez).; Tailwind CDN ilk açılışta intern
+Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
+/RX-PROGRESS
+-->
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fuar Satış</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+<style>
+  html,body{-webkit-tap-highlight-color:transparent}
+  body{padding-bottom:env(safe-area-inset-bottom,0)}
+</style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+
+<header class="bg-indigo-700 text-white px-4 py-3 sticky top-0 z-20 shadow">
+  <div class="max-w-3xl mx-auto flex items-center justify-between">
+    <h1 class="text-lg font-bold">📚 Fuar Satış</h1>
+    <span id="hdrInfo" class="text-xs opacity-80"></span>
+  </div>
+</header>
+
+<main class="max-w-3xl mx-auto p-3 pb-44">
+
+  <!-- SATIŞ -->
+  <section id="tab-sale">
+    <div class="bg-white rounded-2xl shadow p-3">
+      <div class="flex gap-2">
+        <input id="q" type="text" inputmode="search" autocomplete="off"
+          placeholder="Barkod okutun veya kitap / yazar / ISBN yazın"
+          class="flex-1 min-w-0 border-2 border-indigo-200 focus:border-indigo-500 outline-none rounded-xl px-4 py-3 text-base">
+        <button id="camBtn" class="shrink-0 bg-indigo-600 text-white rounded-xl px-4 text-2xl" aria-label="Kamerayla tara">📷</button>
+      </div>
+      <div id="results" class="mt-2 space-y-2"></div>
+      <button id="manualBtn" class="mt-2 text-sm text-indigo-700 font-semibold">➕ Listede yok mu? Elle ekle</button>
+    </div>
+
+    <h2 class="mt-4 mb-2 px-1 text-sm font-semibold text-slate-500 uppercase">Sepet</h2>
+    <div id="cart" class="space-y-2"></div>
+  </section>
+
+  <!-- SATIŞLAR -->
+  <section id="tab-sales" class="hidden">
+    <div id="salesSummary" class="grid grid-cols-2 gap-2 mb-3"></div>
+    <div id="salesList" class="space-y-2"></div>
+  </section>
+
+  <!-- AYARLAR -->
+  <section id="tab-settings" class="hidden space-y-3">
+    <div class="bg-white rounded-2xl shadow p-4">
+      <h2 class="font-bold mb-1">Kitap listesi</h2>
+      <p id="bookStats" class="text-sm text-slate-500 mb-3"></p>
+      <label class="block">
+        <span class="inline-block bg-indigo-600 text-white rounded-xl px-4 py-3 font-semibold cursor-pointer">Dosya seç (CSV / Excel)</span>
+        <input id="file" type="file" accept=".csv,.txt,.tsv,.xlsx,.xls" class="hidden">
+      </label>
+      <p class="text-xs text-slate-400 mt-2">Dosyanın ilk satırı başlık olmalı. ISBN, kitap adı, yazar ve fiyat sütunları kullanılır.</p>
+      <button id="loadSample" class="mt-3 bg-slate-200 rounded-xl px-4 py-3 font-semibold text-sm">Örnek listeyi yükle</button>
+
+      <div id="mapBox" class="hidden mt-4 border-t pt-4 space-y-3">
+        <p id="mapInfo" class="text-sm font-semibold"></p>
+        <div class="grid grid-cols-2 gap-2 text-sm">
+          <label>ISBN / Barkod<select id="mIsbn" class="w-full border rounded-lg p-2 mt-1"></select></label>
+          <label>Kitap adı<select id="mName" class="w-full border rounded-lg p-2 mt-1"></select></label>
+          <label>Yazar<select id="mAuthor" class="w-full border rounded-lg p-2 mt-1"></select></label>
+          <label>Fiyat<select id="mPrice" class="w-full border rounded-lg p-2 mt-1"></select></label>
+        </div>
+        <label class="flex items-center gap-2 text-sm"><input id="replaceAll" type="checkbox"> Mevcut listeyi silip yenisiyle değiştir</label>
+        <div class="flex gap-2">
+          <button id="doImport" class="flex-1 bg-emerald-600 text-white rounded-xl py-3 font-semibold">İçe aktar</button>
+          <button id="cancelImport" class="px-4 bg-slate-200 rounded-xl font-semibold">Vazgeç</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow p-4">
+      <h2 class="font-bold mb-2">Bakım</h2>
+      <button id="clearBooks" class="bg-red-50 text-red-700 rounded-xl px-4 py-3 font-semibold">Kitap listesini temizle</button>
+      <p class="text-xs text-slate-400 mt-2">Satış kayıtlarına dokunmaz.</p>
+    </div>
+  </section>
+</main>
+
+<!-- Sepet çubuğu -->
+<div id="cartBar" class="hidden fixed left-0 right-0 bottom-16 z-20 px-3">
+  <div class="max-w-3xl mx-auto bg-white rounded-2xl shadow-2xl border p-3">
+    <div class="flex items-center gap-2 mb-2 text-sm">
+      <span class="text-slate-500">İndirim</span>
+      <input id="disc" type="number" min="0" step="any" inputmode="decimal" class="w-20 border rounded-lg p-1.5 text-right" value="0">
+      <select id="discType" class="border rounded-lg p-1.5"><option value="pct">%</option><option value="tl">₺</option></select>
+      <span id="subLine" class="ml-auto text-slate-500"></span>
+    </div>
+    <div class="flex items-center gap-2">
+      <div class="flex-1"><div class="text-xs text-slate-500">Toplam</div><div id="total" class="text-2xl font-bold text-indigo-700"></div></div>
+      <button id="clearCart" class="px-3 py-3 bg-slate-200 rounded-xl font-semibold">Temizle</button>
+      <button id="confirm" class="px-5 py-3 bg-emerald-600 text-white rounded-xl font-bold text-lg">Satışı Onayla</button>
+    </div>
+  </div>
+</div>
+
+<nav class="fixed bottom-0 left-0 right-0 z-30 bg-white border-t" style="padding-bottom:env(safe-area-inset-bottom,0)">
+  <div class="max-w-3xl mx-auto grid grid-cols-3 text-sm font-semibold">
+    <button data-tab="sale" class="tabBtn py-3">🛒 Satış</button>
+    <button data-tab="sales" class="tabBtn py-3">🧾 Satışlar</button>
+    <button data-tab="settings" class="tabBtn py-3">⚙️ Ayarlar</button>
+  </div>
+</nav>
+
+<div id="cam" class="hidden fixed inset-0 z-40 bg-black flex flex-col">
+  <div class="relative flex-1 overflow-hidden">
+    <video id="camVideo" class="absolute inset-0 w-full h-full object-cover" playsinline muted></video>
+    <div class="absolute inset-x-8 top-1/3 h-1/4 border-2 border-white/80 rounded-2xl pointer-events-none"></div>
+    <div class="absolute top-0 inset-x-0 p-3 text-center text-white text-sm bg-gradient-to-b from-black/60 to-transparent">Barkodu çerçevenin içine getirin</div>
+    <div id="camErr" class="hidden absolute inset-0 bg-slate-900 text-white p-6 flex flex-col items-center justify-center text-center gap-4">
+      <div class="text-4xl">📷</div>
+      <p id="camErrTxt" class="text-sm leading-relaxed"></p>
+      <label for="photo" class="bg-indigo-600 rounded-xl px-6 py-3 font-bold text-lg cursor-pointer">📸 Fotoğraf çekerek oku</label>
+      <input id="photo" type="file" accept="image/*" capture="environment" class="hidden">
+      <p class="text-xs text-slate-400">Telefonun kendi kamerası açılır, barkodu çekin; uygulama fotoğraftan okur. İzin gerekmez.</p>
+    </div>
+  </div>
+  <div class="bg-slate-900 text-white p-3 pb-6" style="padding-bottom:calc(1.5rem + env(safe-area-inset-bottom,0))">
+    <div id="camMsg" class="text-center text-emerald-300 text-sm h-5 truncate"></div>
+    <div class="flex items-center gap-3 mt-2">
+      <div class="flex-1"><div class="text-xs text-slate-400">Sepet</div><div id="camInfo" class="font-bold"></div></div>
+      <button id="camClose" class="bg-emerald-600 rounded-xl px-6 py-3 font-bold text-lg">Bitti</button>
+    </div>
+  </div>
+</div>
+
+<div id="manual" class="hidden fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-3">
+  <div class="bg-white w-full max-w-md rounded-2xl p-4 space-y-3">
+    <h2 class="font-bold text-lg">Elle eser ekle</h2>
+    <input id="manName" type="text" placeholder="Kitap / eser adı *" class="w-full border-2 border-slate-200 focus:border-indigo-500 outline-none rounded-xl px-3 py-3 text-base">
+    <input id="manAuthor" type="text" placeholder="Yazar (isteğe bağlı)" class="w-full border-2 border-slate-200 focus:border-indigo-500 outline-none rounded-xl px-3 py-3 text-base">
+    <div class="flex gap-2">
+      <input id="manPrice" type="text" inputmode="decimal" placeholder="Fiyat ₺ *" class="w-1/2 border-2 border-slate-200 focus:border-indigo-500 outline-none rounded-xl px-3 py-3 text-base">
+      <input id="manIsbn" type="text" inputmode="numeric" placeholder="Barkod (isteğe bağlı)" class="w-1/2 border-2 border-slate-200 focus:border-indigo-500 outline-none rounded-xl px-3 py-3 text-base">
+    </div>
+    <label class="flex items-center gap-2 text-sm"><input id="manSave" type="checkbox" checked> Kitap listesine de kaydet (sonra aramada çıksın)</label>
+    <div class="flex gap-2">
+      <button id="manOk" class="flex-1 bg-emerald-600 text-white rounded-xl py-3 font-bold">Sepete ekle</button>
+      <button id="manCancel" class="px-5 bg-slate-200 rounded-xl font-semibold">Vazgeç</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="hidden fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-sm rounded-xl px-4 py-2 shadow-lg"></div>
+
+<script type="application/json" id="sampleData">[["9786257383110","‘Adat Û Rusûmatname’ê Tewayifê Ekradiye",350],["9786059413398","101 Gotinên Pêşiyan 101 Çîrok",280],["9786256605534","101 Gotinên Pêşiyan 101 Çîrok-2",280],["9786059413114","1925 Hareketi Azadî Cemiyeti",370],["9786256605022","41+ 1",150],["9786055402648","A'dan Z'ye Kürtler",500],["9786257383202","Abdulla Peşêw Rizgarkerê Dawî Yê Helbesta Kurdî",350],["9786257383059","Abşûran",200],["9786059413879","Adâb-I Tarîkat-I Nakşibendiyye",240],["9786059413572","Ahlât Eyyûbîleri Tarihi",370],["9786055402457","Akkoyunlu Kürt İlişkileri",280],["9786055402242","Ali Emiri’nin Gözü ile Diyarbakirli Şairler",280],["9786257383776","Alimekî Ji Medreseyê: Mele Heyder Varli",260],["9789750005350","Amid’den Diyarbekir’e Eğitim Tarihi",250],["9789944360289","Antolojiya Çîrokên Nûbiharê",310],["9786256605510","Antolojiya Nivîskarên Jinên Kurd",460],["9786056862533","Ap Hus",160],["9786055053451","Arwûn Û Lûy",310],["9786257383684","Asoya Peyvên Sermest",260],["9786057121745","Astorê Terqnayeyî",350],["9786059413701","Aşiretçilik, Milliyetçilik ve İslamcılık Kavşağında Osmanlı'nın Kürt Siyaseti (1876-1909)",520],["9786257383073","Aşiretler Tarihi",600],["0000000000001","Aşk Destanları Seti",750],["9786058536555","Axînê Min Welat",200],["9786259088846","Ayeta Axê",160],["9786056919312","Baba Vano",240],["9786055053321","Bajar Edebiyat Û Cizîra Botan",280],["9786055402556","Banga Yekîtî Bo Azadî",300],["9786256605282","Batıda Sahte Bir Kürt Prensi: Kakelo",240],["9786055402198","Baxçeyê Jiyana Piştî Mirinê",280],["9786055053161","Bedîê Esrê Jînameya Bedîuzzeman",260],["9789944360692","Bediüzzaman’ın Hayatı",200],["9786055402655","Bêhna Sêvê",125],["9786055402488","Berbiqa Li Ser Avê Me",260],["9786055402709","Berdin Bila Tarî Be",160],["9786054287574","Berenge",200],["9786054287352","Bero Sûr",150],["9786257383097","Berxwedan",250],["9786257383035","Berxwedana Qehremanan",280],["9786055053369","Beytên Erbanê",250],["9786257383806","Bi Dîtin Û Şahidiya Min Ebdulla M. Varli",280],["9786058536562","Bi Kirdkî/zazakî Memê Alan",300],["9786055053291","Bi Kurmanciya Gewr",280],["9786059413510","Bi Mesel Û Mîsalan Destanê Memê Alan",350],["9786055053253","Bi Xatirê Te Zimano",200],["9786257383219","Bilûrvanê Gundê Bimişk",150],["9786056862595","Binê Dara Valêre de",160],["9786055053642","Bini Aşan Hasret",200],["9786257383998","Bir Asimilasyon Aracı Olarak Kentler ve Kürtler",280],["9786256605909","Bir El Kitabı Kürtler",1100],["9786256605725","Bobelat",160],["9786059413954","Buhranda Bir Kürt Aydını",260],["9786055402723","Büyük Kürt Mucit Ebul İz El-Cezeri",250],["9786257383165","Cilên Qral Ên Nû",150],["9786058324695","Cimê Aşikan Ra Hewt Hîkayeyê Gelêrî",200],["9789944360487","Cumhuriyet Öncesi Diyarbekir’de Maârif",300],["9786059413206","Çar Derya",600],["9786055053444","Çarîneyên Omer Xeyyam",260],["9786055053284","Çavên Bavê Min",150],["9786057484789","Çê Qemerê Kejî",260],["9786057121776","Çend Kerdenê Dostê Kosmosî",150],["9786256605169","Çerçiyê Taxê",220],["9786259088853","Çîçekên Cemedê",160],["9786055402433","Çil Hedîs",200],["9786059413640","Çîn Û Maçîn",220],["9786259203706","Çîrokên Ebexeyê",550],["9786055053338","Çîrokên Efsaneyî Yên Kurdan",550],["9786055402327","Çîrokên Gelêrî",220],["9786256605657","Çîrokên LI Ber Bayê",220],["9786259094717","Çîrokên Sêhrbazî Û Qehremaniyê",400],["9786055053086","Çîrokên Serkeftinê 1 - Belavkirina Ronahiyê",240],["9786055053390","Çîrokên Serkeftinê 2 - Dizê Xeyalan",240],["9786055053406","Çîrokên Serkeftinê 3 - Xeyala Zarokê",240],["9786059413695","Çîrokên Serkeftinê 4 - Rêwiyê Rojê",240],["9786259203744","Çivîkeke Yekbask",150],["9786055053666","Çöl ve Yolcu",150],["9786055402730","Çûka Keko Peko",160],["9786256605053","Çûkê Bilûrvan Venûkirina Çîroka Gelêrî",150],["9786256605817","Dağ Kartalı Bad Bin Dostik",250],["9786056862571","Dara Hênî",240],["9786059413336","Dara Malbata Pêxemberan Û Ehlê Beyta Nebî",220],["9786058324664","Darule",260],["9786059413534","Daweta Noko Û Nîskê",150],["9786055053888","Dê Û Dêmarî",200],["9786055402037","Defteroka Şirîn",200],["9786257383929","Delala Dînik Rastiyeke Geliyê Zîlan",240],["9786055402082","Delilleri ile Şafii İlmihali",440],["9786259094748","Dema Pelên Titûnê",300],["9786257383042","Demsala Nan",180],["9786259088860","Dendika Încasê",150],["9786059413978","Dengbêj Huseyno ( Antolojiya Dengbêjan-3) Ciltli",550],["978625383004","Dengbêj Huseyno ( Antolojiya Dengbêjan-3) Karton Kapak",440],["9786257383943","Dengbêj Mehmûdê Hesê Antolojiya Dengbêjan 4",530],["9786059413442","Dengbêj Reso (Antolojiya Dengbêjan-1)",520],["9786059413435","Dengbêj Şakiro Antolojiya Dengbêjan 2",780],["9786257383875","Dengbêj Zahiro: Qulingê Serhedê",220],["9786054287611","Derdê Hîris Û Heştî",160],["978605941370","Deriyê Dil - Guldesteyek Ji Şiîra Almanî",200],["9786054287383","Dersê Ziwanî",250],["9786056669224","Dersim Kürt Tedibi 1937-1938",300],["9786054287642","Dêsan de Sûretê Ma Nimite",160],["9786059413633","Destana Kela Dimdim Û Xanê Lepzêrîn",250],["9786055053574","Destana Zembilfroş Û Gulxatûn",310],["9786056862502","Destê Zemanî",150],["9786055053048","Destpêka Edebiyata Kurdî ya Klasîk",460],["9786059413299","Dewr Û Gera Kurdistanê",350],["9789944360951","Dewrêşê Evdî",350],["9786056919374","Deyîran Û Manîyanê Gêlî Ra",280],["9786054287635","Deyîrbazê Dêrsimî Saît Bakşî",150],["9786059413756","Di Arşîvên Rûsyayê de Mistefa Barzanî",260],["9786059413480","Di Edebiyata Kurdî ya Klasîk de Teşeyên Nezmê",800],["9786055053376","Dîcle Diherike Dilê Min",280],["9786055053260","Dilşa",240],["9786257383660","Dilşa Banderê Ramitişê Bîsîklete Bena",150],["9786256605237","Dilşa Cara Pêşî Difire",150],["9786257383387","Dilşa Dest Bi Dibistanê Dike",150],["9786257383653","Dilşa Dest Bi Mekteb Kena",150],["9786256605220","Dilşa Dibe Xwediya Pisîkekê",150],["9786257383431","Dilşa Diçe Bexçeyê Heywanan",150],["9786257383646","Dilşa Futbol Kay Kena",150],["9786257383424","Dilşa Futbolê Dilîze",150],["9786257383394","Dilşa Hînî Ajotina Biskilêtê Dibe",150],["9786257383417","Dilşa LI Nexweşxaneyê Ye",150],["9786257383639","Dilşa Nêweşxane de ya",150],["9786256605244","Dilşa Pizzayê Çêdike",150],["9786257383622","Dilşa Şona Baxçeyê Heywanan",150],["9786256605213","Dilşa Û Pitika Nû",150],["9786257383615","Dilşa Vîndî Bena",150],["9786257383400","Dilşa Wenda Dibe",150],["9786256605299","Dîroka Edebiyata Kurdî (7 Cild, Bi Qutî)",4600],["9786256605916","Dîroka Edebîyata Kurdî Serdema Berî Îslamê & Serdema Xanedanan (Sedsal: Bz VIII - Pz XV)",500],["978605941390","Dîroka Navdarên Kurd",1300],["9786256605718","Dîtin Û Bîrhatinên Min (1914-1983)",460],["9786058536579","Dîwan",280],["9786059413183","Dîwan -Derdê Welat-",260],["9789944360760","Dîwan Melayê Cizîrî",370],["9786055402211","Dîwan Perto Begê Hekarî",350],["9786055402983","Dîwan Rezê Jiyanê",400],["9789944360685","Dîwan Seyid Eliyê Findikî",370],["9786257383530","Dîwana ‘Işqê",300],["9786055402600","Dîwana Babnîrî",220],["9786256605701","Dîwana Behmûrî (Ristek Mircan Û Morî)",260],["9786055402778","Dîwana Bêxew",260],["9786059413046","Dîwana Îrfan",280],["9786256605060","Dîwana Mîrê Zirav (Mela Muhemmed Gulnar)",400],["9786257383066","Dîwana Namî",370],["9786050000015","Dîwana Reşpojan",280],["9786256605985","Dîwana Şerq Û Xerbî",320],["9786055053604","Dîwana Şêx Şemsedînê Exlatî",260],["9786055402631","Dîwana Weda’î",240],["9944360197","Diyariya Kurdî Fiqha Şafiî",200],["9786256605527","Doza Kurdistan -Kürdistan Davası- Kürt Ulusunun Tutsaklıktan Kurtuluş Mücadelesinin 60 Yıllık Hatıraları",350],["9786059413558","Dozger",220],["9786256605077","Du Çîrok Û Nameyek",150],["9786059413541","Du Legleg Zozan Û Gernas",150],["9786257383936","Du Sêwî -Çîrokên Jiyayî",200],["97899443607222","Duru Su Rüyası",330],["9786256605794","Edebiyata Kurdî ya Diasporayê",280],["9786257383844","Edebîyata Kurdî ya Sovyetê",260],["9780000000004","Efsaneler ve Gerçekler",350],["9786257383233","Efsaneya Çiyayê Agiriyê",250],["9786259094700","Efsaneyên Devera Agirî Û Îdirê",240],["9786055402495","Eftelya",470],["9786059413794","Ejderhayê Tirsonek",150],["9786055402020","Elîfba Û Tecwîd",200],["9789944360302","Elma Kokusu",200],["9786055402051","Eqîde Û Fiqha Zelal",330],["9786059413817","Erdelan Tarihi",440],["9786058324640","Ermeni Tehcirinin 100. Yılında Sözel Tarihten Gerçeğe Diyarbekir",250],["9786058324619","Estanekan Û Meselayanê Gêlî Ra",200],["9786259203768","Estanikanê Diyarbekirî Ra Guldesteyêk",250],["9786058536586","Estareyê Koyê Hesarî",200],["9786055053857","Eşîra Reşkotan",280],["9786257383080","Eşqname 100 Xezelên Mewlana Yên Bijartî",370],["9786055053420","Evdalê Zeynikê -Şairê Efsanewî Yê Kurdan -",280],["9786056862564","Ez Gule Ra Hes Kena",160],["9786056919367","Ez Kirdon Rê Vona",240],["9786056545504","Ez Tirkî Nêzana",260],["9786056545511","Ez Û Ti",220],["9786057121721","Ez Û Vate",240],["9786059413343","Fablên Kurdî",220],["9786256605381","Fablên La Fontaine",460],["9789944360432","Feqiyê Teyran",500],["9786257383141","Feqiyê Teyran (Kürtçe Metin-Türkçe Çeviri)",780],["9789944360593","Ferhenga Çapemeniya Kurdî / Kürtçe Basın Sözlüğü",370],["9786055402815","Ferhenga Kerbelayî",280],["9786058324688","Ferhengê Îdyomanê Zazakî",360],["9786057121707","Ferhengê Termanê Edebî",240],["9786257383349","Ferhengê Zazakî [Dimilî, Kirmancî, Kirdî] Türkçe Açıklamalı",2800],["9786256605930","Ferhengê Zazakî-Tirkî & Tirkî Zazakî Zazaca-Türkçe & Türkçe-Zazaca Sözlük",420],["9786257383578","Folklor Û Civat (Folklor, Wêje, Ziman, Çand, Xeyset, Muzîk, Urf Û Adet, Dîrok)",550],["9786059413862","Folklora Qerejdaxê (Pirsên Pêşiyan, Biwêj, Qirwelk, Nifir Û Dua)",460],["9786058536517","Folklorê Kirmancan Ser O",310],["9786257383493","Fonemên Kurdî Ên Kurdolog Û Seyyahên Rojavayî (1787-1887)",240],["9786256605688","Geçmişten Günümüze Zîlanlılar ve Şeyh Muhammed Zîlanî",350],["9786257383028","Geleneksel Kürt Kadın Kıyafetleri / Cilûbergên Gelêrî Yên Jinên Kurd",2100],["9786257383196","Gercüş (Kercos/kercews) Kitabı (İnsan-Dil-Edebiyat-Tarih-Coğrafya-Kültür)",370],["9786055053062","Gerekçe ve Hükümleriyle Şark İstiklal Mahkemesi Kararları (Cild: 1-2)",1100],["9786059413350","Girr Û Gallî Mindallanî Kurd",260],["9786259088884","Girtiyên Kela Bazîdê",280],["9786256605541","Gotarên Vekolînên Çanda Kurdî",600],["97860550533","Gotarên Zimannasiyê",370],["9786055402808","Gotinên Pêşiyan Çîrokên Dawiyan",240],["9786257383486","Gotinên Pêşiyên Kurdan Bi Zimanê Gundan",550],["9786055053673","Gönülden Kaleme",350],["9786054287628","Grev",200],["9786059413800","Gulcivîn",460],["97899443602342","Guldan",280],["9786055053000","Guldesteyek Çîrok / Ji Roja Nû, Ronahî Û Hawarê",240],["97860554023031","Gulîstan",260],["9786055053017","Gulîstan",260],["9786256605084","Gundê Xweş Û Gundê Nexweş",180],["9786059413787","Gurê Kubar",150],["6238240550687","Gülbaran'ın Gülleri",460],["9786055402860","Günümüz Yezidiliği",460],["9786056545542","Halîn",200],["9786059413145","Hâmîsiz Şâir, Babasız Metin",370],["9786059413848","Hasanveyhî Kürt Emirliği (961-1015)",330],["97899443605002","Hebana Berxvan",350],["9786256605442","Heft, Hesp, Teyr, Ruh, Av Û Agir Deh Mijar Ji Zargotina Kurdî",360],["9786256605640","Heftcark - Têm Xwarê Ji Bejna Xwe",200],["9786257383318","Hekîmtiya Kurmancî",440],["9786059413763","Hêliya Heqîqetê - Xatireyên Heyatê",330],["9786054287550","Hesê Mişî",200],["9786256605428","Hestên Pîroz",160],["9786256605497","Hevdîtina Pêxemberan",160],["9786054287567","Hêvîya Macire",150],["9786059413268","Hewara Merwaniyê Çiyayê Rûtik E",240],["9786058324671","Heyf",350],["9786257383325","Hîç - Sî - Saya",280],["9786257383127","Hîkayetêd Kurmancî",240],["9786256605411","Hîkmet Bi Hîkayet",240],["9786257383011","Hikûmeta Kurdistanê",350],["9786256605251","Hinekirî Mane Guliyên Şevê",280],["9786055053307","Hingê",200],["9786056919350","Hîrê Nameyî",200],["9786256605923","Hizra Melê Çavkaniyên Dîwana Melayê",700],["9786259094724","Huso Û Nazê",260],["9786058536524","Huyayîş Karode Şorişgêrane Yo",150],["9789944360562","İlk Vatandan Gelen Sürgün",280],["9786256605695","İlmê Belaxetê Bi Kurdî",850],["9786256605893","İmparatorluk, Serhad ve Sancak: Bayezid",480],["9786257383752","İngiliz ve Fransız Arşiv Belgeleriyle Sevr-Lozan-Musul’da Kürtler",550],["9786257383745","İngiliz ve Fransız Arşiv Belgeleriyle Şeyh Said Hareketi",480],["9786059413619","İngiltere'nin Kürt Politikası (1918-1932)",550],["9786257383790","Îran Xanim: Hawarek Ji Ûrmiyeyê",200],["9789944360531","İslam Aleminde Vakif Kütüphaneciliği",330],["9786055402747","İslam’da Dava-Yı Kavmiyet",220],["9789750005374","İslamiyet'in El-Cezire'ye Gelişi",330],["9786055053475","Janistan",160],["9786057484703","Ji Bo Kurmancan Bi Awayê Muqayeseyî Gramera Kirdkî (Zazakî)",300],["9786259088839","Ji Curnaliyê Nameyên Bengî",240],["9786055402167","Ji Dermanxaneya Siruştê Zerzewatên Şîfadar",260],["9786256605404","Ji Haîkûnûsên Japonî Demsal Bi Demsal Haîkû",250],["9786257383370","Ji Hewşa Xelkê -Guldesteyek Ji Kurteçîroka Almanî-",220],["9786055053970","Ji Kelepora Kurmancên Îranê Gilî Û Gazinên Evîndaran",370],["9786256605039","Ji Sefera Şi’rekê Têm Niha",220],["9786055053932","Ji Şairekî Ciwan Re Name",160],["9786059413367","Jiyanek Dijwar (Bîranîn, Çand, Çîrok )",280],["9786055402976","Kaçış",220],["9786055402853","Kadiz",420],["9786059413053","Karabasan Bir Selahaddin Romanı",440],["9786256605664","Kayıp Bir Kürt ve Alevi Aydını: Doğan Kılıç",250],["9786256605473","Keça Dilê Te Me",160],["9786054287659","Kekû",250],["9789944360968","Kela Dimdimê Xanê Çengzêrîn",200],["9786059413374","Keldaniler ve Diyarbakır",370],["9786055402136","Kelîle Û Dîmne",215],["9789944360272","Kendi Kendine Kolay Farsça",440],["9786059413671","Kenê Miriyan Gunehê Guran",200],["9786257383103","Kenê Reş",200],["9786055053925","Kerr Û Kulik",160],["9786257383608","Keskesora Zêrîn",360],["9786257383301","Kevirê Selîm",200],["9786056862588","Kevoke",200],["9786256605756","Kîkan Aşireti - Tarih, Toplum ve Siyaset",260],["9786256605565","Kil Û Hine Netê",160],["9786055053277","Kilam Û Jin",280],["9786259203737","Kils - Îspanya Vê Peyalê Dûrî Min Bibe",300],["9786257383226","Kînor",260],["9786256605503","Kirasê Heyînê",200],["9786256605121","Kirasê Mar",160],["9786055053550","Kitana Spî",220],["9786056669217","Koçkıri Kırımı 1920-1921",400],["9786257383820","Korku ve Umut: II. Abdülhamid Dönemi Kürt-Ermeni İlişkileri",500],["9786256605954","Kujer Kî Ye?",220],["9786055053512","Kulîlk Dîwana Zarok Û Ciwanan",135],["9786059413381","Kulîlka Evîna Bêdeng",150],["9786056545528","Kulîlkên Buharê",240],["9786059413466","Kulliyatu-S Seyid Elî El Findikî",370],["9789944360241","Kulxaniya Veşartî",200],["9786059413121","Kurd Û Ecem",340],["9786055053581","Kuruluş Döneminde Eyyübiler Selahaddin’in Devleti",300],["9786257383332","Kürt Edebiyatında Şiir ve Halk Şarkıları Tahlilleri",400],["786059413835","Kürt Hikayesi",240],["9786059413626","Kürt Kadınları Teali Cemiyeti ve Nizamnamesi",220],["9789944360852","Kürtler ve Kürdistan Tarihi",750],["9786256605671","Kürtlerin Geleceği Açısından Konfederalizm MI Devlet MI?",330],["9786056669248","Kürtlerle Türkler Bin Yıllık Geçmişin Kısa Tarihi",280],["9786257383882","Lalezar Bi Şîret Û Hîkmet Û Hîkayeyan Şerha Gotinên Pêşîyan",350],["9786256605961","Leheng Nafirin Nivîskar Wan Difirînin",220],["9786055402471","Leyl-Name",220],["9786256605770","Leyla Û Mecnûn",520],["9786056919336","LI Min Binêre",150],["9786055402006","LI Muksê Folklor Û Jîyana Rojane",220],["9786059413275","LI Şedadiyê Du Jinên Ermen",240],["9786057484772","Lîtreya Sayan Çend Lîra ya?",150],["9786257383783","Lixwegerîn",260],["9786055053215","Lorîname",200],["9786059413596","Maciriya Hemîdiyekî [Rojnivîska Mela Mihemedê Zîlanî (1915-1918)]",240],["9786057121714","Mealê Kirdî Quranê Kerîm Bi Zazakî",600],["9786256605435","Mecmûat-Us Serf",500],["9786055402563","Mecmûe Mîn Erbe'î Kutub",550],["9789750005398","Medreseden Meclis’e Meclis’ten Yasssıadaya",400],["9786055053598","Medreseyên Kurdistanê",250],["9789944360661","Mela Huseynê Bateyi",300],["9786059413039","Mela Mehmûdê Bazîdî Û Adat Û Rusûmatnameê Ekradiye",330],["9786055402525","Melayê Cizîrî Dîwan (Bi Herfên Erebî)",550],["9789944360180","Melayê Cizîrî Dîwan (Kürtçe Metin-Türkçe Çeviri)",800],["9786055402389","Melayê Cizîrî Felsefi ve Tasavvufi Görüşleri",330],["9786059413060","Melayê Cizîrî Hakikat ve Mecaz Arasında Bir Sûfî’nin Portresi",250],["9786059413527","Melayê Cizîrî Jiyan Û Tesîra Edebî Şerha Xezelên Bijartî",250],["9789944360036","Mem Û Zîn",250],["9789944360715","Mem Û Zîn",370],["9786055053185","Mem Û Zîn -Azerice-",360],["9789944360555","Mem Û Zîn (Bi Herfên Erebî)",450],["9786055053345","Mem Û Zîn (Kürtçe Metin-Türkçe Çeviri)",800],["9786059413886","Mem Û Zîna Hewramî",330],["9786056862519","Mem Û Zîne Bi Zazakî",370],["9786256605145","Memê Û Zînê",240],["9789944360418","Meqamat",200],["9786257383295","Meremê Dilê Kurd",260],["9786057484727","Merhebaya Nîmeyê Şewe",150],["9786056545535","Mesel Û Vistonikî",240],["9786059413497","Mesnewiya Yûsuf Û Zuleyxayê",460],["9786257383189","Meşa Bêdawî, Mistefa Barzanî",280],["9786256605886","Methiyeyek Bo Şeytan",350],["9786055402938","Mewlidê Kirdî",200],["9786055402440","Mewlûda Nebî",550],["9786056545573","Meymanê Homayî",150],["9786055053543","Mısır'da Kürtler",280],["9786257383592","Mijarên Bijare",360],["9786256605152","Miradê Kinê Jiyan, Huner Û Stranên Wî",600],["9786059413220","Mîrektiya Bitlîsê",240],["9786059413589","Mîrektiya Erdelanê",220],["9786256605862","Mishefa Salixdêrekî Herfperest",240],["9786257383271","Misk Û Enber",300],["9786257383721","Mîtos Û Edebîyat Mîtosên Kurdo-Îranî Di Edebiyata Kurdî de",460],["9786256605848","Mizgîna Azadiyê",250],["9789944360708","Muhafazakar Kürt Yoksullar Beyaz Kadin ve Muska",160],["9789944360425","Munazerat",310],["9789944360647","Müküslü Hamza",250],["9786256605626","Müslüman Gezgin ve Coğrafyacılara göre Kürtler ve Yaşadıkları Coğrafya (846-1229)",460],["9786055402396","Nasihatname",440],["9786059413657","Nâum Faik ve Süryani Rönesansi",260],["9786055402372","Nehcul Enam & Eqîdeya Îmanê",250],["1000000000006","Nehcun-Necah Fî Ehkamîn-Nîkah",160],["9786059413169","Nerît Û Helbest",350],["9786257383479","Newayên Mutrib Û Çengên Kurdan",350],["9786257383912","Nexweşxane",240],["9786257383585","Neynika Muhemmedî",360],["9786055402069","Neynika Xeman",200],["9786055053918","Nûbar",280],["100","Nûbihar 100",125],["103","Nûbihar 103",125],["104","Nûbihar 104",125],["107","Nûbihar 107",125],["110","Nûbihar 110",125],["111","Nûbihar 111",125],["114","Nûbihar 114",125],["118","Nûbihar 118",125],["123","Nûbihar 123",125],["125","Nûbihar 125",125],["126","Nûbihar 126",125],["127","Nûbihar 127",125],["128","Nûbihar 128",125],["129","Nûbihar 129",125],["130","Nûbihar 130",125],["131","Nûbihar 131",125],["132","Nûbihar 132",125],["133","Nûbihar 133",125],["134","Nûbihar 134",125],["135","Nûbihar 135",125],["136","Nûbihar 136",125],["137","Nûbihar 137",125],["138","Nûbihar 138",125],["139","Nûbihar 139",125],["140","Nûbihar 140",125],["141","Nûbihar 141",125],["142","Nûbihar 142",125],["143","Nûbihar 143",125],["146","Nûbihar 146",125],["147","Nûbihar 147",125],["148","Nûbihar 148",125],["149","Nûbihar 149",125],["150","Nûbihar 150",125],["152","Nûbihar 152",125],["153","Nûbihar 153",125],["154","Nûbihar 154",125],["155","Nûbihar 155",125],["156","Nûbihar 156",125],["157","Nûbihar 157",125],["158","Nûbihar 158",125],["159","Nûbihar 159",125],["160","Nûbihar 160",125],["161","Nûbihar 161",125],["162","Nûbihar 162",125],["167","Nûbihar 167",125],["168","Nûbihar 168",125],["170","Nûbihar 170",125],["171","Nûbihar 171",125],["172","Nûbihar 172",125],["173","Nûbihar 173",200],["174","Nûbihar 174",200],["175","Nûbihar 175",200],["5152","Nûbihar 51-52",125],["5354","Nûbihar 53-54",125],["55","Nûbihar 55",125],["59","Nûbihar 59",125],["61","Nûbihar 61",125],["62","Nûbihar 62",125],["6364","Nûbihar 63-34",125],["6667","Nûbihar 66-67",125],["6869","Nûbihar 68- 69",125],["70","Nûbihar 70",125],["71","Nûbihar 71",125],["72","Nûbihar 72",125],["7374","Nûbihar 73-74",125],["7576","Nûbihar 75-76",125],["77","Nûbihar 77",125],["78","Nûbihar 78",125],["798081","Nûbihar 79-80-81",125],["82","Nûbihar 82",125],["83","Nûbihar 83",125],["84","Nûbihar 84",125],["85","Nûbihar 85",125],["86","Nûbihar 86",125],["87","Nûbihar 87",125],["88","Nûbihar 88",125],["89","Nûbihar 89",125],["90","Nûbihar 90",125],["91","Nûbihar 91",125],["92","Nûbihar 92",125],["93","Nûbihar 93",125],["94","Nûbihar 94",125],["95","Nûbihar 95",125],["96","Nûbihar 96",125],["97","Nûbihar 97",125],["98","Nûbihar 98",125],["99","Nûbihar 99",125],["1","Nûbihar Akademî 1",100],["16","Nûbihar Akademî 16",100],["17","Nûbihar Akademî 17",100],["18","Nûbihar Akademî 18",100],["19","Nûbihar Akademî 19",100],["2","Nûbihar Akademî 2",100],["20","Nûbihar Akademî 20",100],["21","Nûbihar Akademî 21",100],["22","Nûbihar Akademî 22",100],["4","Nûbihar Akademî 4",100],["5","Nûbihar Akademî 5",100],["7","Nûbihar Akademî 7",100],["8","Nûbihar Akademî 8",100],["9","Nûbihar Akademî 9",100],["10","Nûbihar Cild 10 (95-98)",500],["11","Nûbihar Cild 11 (99-102)",500],["12","Nûbihar Cild 12 (103-106)",500],["13","Nûbihar Cild 13 (107-110)",500],["14","Nûbihar Cild 14 (111-114)",500],["15","Nûbihar Cild 15 (115-118)",500],["16","Nûbihar Cild 16 (119-122)",500],["17","Nûbihar Cild 17 (123-126)",500],["18","Nûbihar Cild 18 (127-130)",500],["19","Nûbihar Cild 19 (131-134)",500],["20","Nûbihar Cild 20 (135-138)",500],["21","Nûbihar Cild 21 (139-142)",500],["22","Nûbihar Cild 22 (143-146)",500],["23","Nûbihar Cild 23 (147-150)",500],["6","Nûbihar Cild 6 (61-72)",500],["8","Nûbihar Cild 8 (87-90)",500],["9","Nûbihar Cild 9 (91-94)",500],["9786055053499","Nûbihara Mezinan",370],["9786055053031","Nuh Peygamber Tufanı ve Cudi Dağı",330],["9786055053994","Nurculuğu Biraz da Benden Dinleyin",360],["9786058324602","Nuşteyê Verênî",150],["9786256605091","Ofof",180],["9786259094731","Orta Çağ Kürt Tarihi Araştırmaları",300],["9786256605008","Osmanlı Devleti’nde Bir Kürt Aşireti Aşîtî",280],["9786059413091","Osmanlı'nın Son Yüzyılında Kürtler - [Modernleşme, Merkeziyetçilik ve İsyan]",480],["9786256605787","P.z 40",200],["9786059413749","Payiza Mezinan",260],["9786256605480","Pênûsa Şikestî",240],["9786055402518","Pertewa 40 Hedîsan",520],["9786257383769","Perwerdeya Zarokan Bi Çîrokan",260],["9786257383288","Perweza Weten",260],["9786055402075","Pêxemberê Ummetê Hz. Muhemmed",260],["9780000000011","Peyiva Bîst Û Sêyemîn",150],["9786055402921","Pilingê Serhedê",350],["9786257383172","Pira Çandê",200],["9786256605190","Pişîka Min",100],["9786054287543","Pîyê MI Kemane Cinitêne",200],["9786256605602","Plandanîna Zimanê Kurdî Di Mînakên Korî Zanyarî Kurd Û Enstîtuya Kurdî ya Parîsê da",400],["9786257383707","Poncas Pêxembero mu‘ellîm",280],["9786256605466","Porzêrînê -Xeberoşkên Herêma Mêrdînê-",250],["9789944360470","Pratik Kürtçe Dersleri & Ez Kurdî Hîn Dibim",380],["9786055053239","Pratik Kürtçe Dersleri & Ez Kurdî Hîn Dibim - Geçişli Fiiller ve Ergativ",280],["9786059413961","Pratik Kürtçe Dersleri & Ez Kurdî Hîn Dibim 2",380],["0000000000004","Pratik Kürtçe Dersleri Seti",760],["9786256605114","Prensesa Xwedivê",180],["9786257383264","Qalçîçek",200],["9786259203720","Qehreman Û Qeyteran",300],["9786257383158","Qenewîç",160],["9786055053963","Qêrînek Ji Axa Zelûl",240],["9786055402624","Qewlê Newala Sîsebanê",220],["9789944360746","Qisseyên Pêxemberan",260],["9786059413305","Raro Raşt Û Me'lûmatê Dînîye",260],["9786058324657","Rêça Binbareke",220],["9789944360609","Reng Û Rûyê Pêxember",220],["9786059413237","Reso Şahê Dengbêjan",260],["9786055053130","Reşokê Dirêj",240],["9786256605596","Rêya Jiyana Min",480],["9786055402297","Rêya Kadizan",310],["9786055402594","Rêziman Û Rastnivîsa Kurdiya Kurmancî",400],["9789944360586","Rêzimana Kurdî (Kurmancî-Soranî)",360],["9780000000012","Rîsala Biratîyê",120],["9786256605633","Ristemê Zal",440],["786256605046","Risteyên Kaptan",220],["9789944360548","Riyadus-Salihîn (Baxên Qencan)",680],["9786257383561","Rizgarkirina Jaydenê",230],["9786059413138","Rojnameya Kurdî ya Herî Pêşîn Kurdistan",240],["9786059413930","Roniya Çavan Heyata Hezretî Muhammed Mustafa",470],["9786055402587","Rubaiyat",240],["9786257383554","Said -Kürtlüğün Kayıp Risalesi-",460],["9786256605459","Said Elçi -Bir Misyon Bir Lider-",320],["9786257383363","Sal Mîna Bawîşkan Derbas Dibin",160],["9786059413985","Sala Şewatê",460],["9786056545580","Sanikanê Mamekîye Ra",260],["9786256605732","Sê Cîhanşah Û Rêbirek",160],["9786057484741","Seîd Altun “Emir Şi”",260],["9786055053987","Selahaddin-I Eyyubî Bir Kürt Hanedanlığının Hikayesi",250],["9786059413718","Selahedînê Eyûbî Û Kurê Mîrê Amediyê",250],["9786256605763","Serêkaniyê",220],["9786055053635","Serhildana Şêx Ubeydullahê Nehrî Di Belgeyên Qacarî de",550],["9789944360265","Serkanî",240],["9786056919398","Serketina Kewan",200],["1234567891234","Seta Antolojiya Dengbêjan",2380],["97860550530861","Seta Çîrokên Serkeftinê (1, 2, 3, 4)",960],["9780000000013","Seta Daristana Şêrîn",1200],["00000000002","Seta Embaza MI Dilşa [Zazakî, Dimilî, Kirmancî, Kirdî]",900],["0000000000003","Seta Guldesteyek Edebiyata Almanî",780],["112233445566","Seta Hemû Berhemên Şikoyê Hesen",940],["9786257383000","Seta Hevala Min Dilşa [Kurmancî]",1500],["123056123456","Seta Sê Şaheserên Kurmancî / Üç Kürtçe Şaheser Seti",2380],["9786054287598","Sewdaya Belekine",200],["9786257383905","Seyahatnamelerde ve Hatıratlarda Malatya-Adıyaman Kürtleri",360],["9789750005343","Seyf-Ul Milûk Û Bedî-Ul Cemal",350],["9786055402914","Seyyid Şefik Arvasi",250],["9789944360883","Siltan Selahaddînê Eyûbî",270],["9786055402884","Sîlvan/ Silîvan / Farqîn",350],["9786055053895","Simko, Axayê Şikakî Û Tevgera Neteweyî ya Kurd",550],["9786056862526","Sîmserkîs",300],["9786257383240","Sînor",280],["9786256605275","Sirra Bi Kul",200],["9786256605138","Sîsê",220],["9786059413107","Sîwana Qur'anê -Meala Qur'ana Pîroz-",800],["9789944360043","Siyamend Û Xecê",250],["9789944360753","Siyera Nebî",250],["97899443605001","Sîyerê Nebî Bi Ziwanê Dimilî",220],["9786058536593","Solê Sûrî",240],["9789944360777","Son Kapı",220],["9789944360463","Sonsuzluk Histerisi",160],["9786259088877","Sorgu",240],["9789944360890","Sorgul",330],["9786257383691","Sosyalist Kürtler (1917-1937) Devrim, İnşa, Sürgün",290],["9786257383523","Spêle",200],["9786059413190","Statüko Ağa ile Derwêşê Abdal",260],["9786256605855","Stêrikên Vebirûsî",160],["9786257383134","Stêrka Evînê",160],["9786055053192","Stêrkên Bihiştê",200],["9786059413824","Sûc Û Ceza",550],["9786256605176","Suhbeta Sed Eşîran",260],["9786055053482","Sultan Abdulhamid ve Kürtler",550],["9786257383462","Süleymaniye’den İstanbul’a Bir Kürt Aydını Emin Feyzi Bey’in Hatıraları (1862-1929)",250],["9789944360005","Süryaniler ve Diyarbakır",440],["9786257383455","Şebçirax Romana Melayê Cizîrî",250],["9786256605978","Şebrona",240],["9786256605572","Şeddâdîler Devleti Tarihi I- Kafkasya’da Bir Kürt Hanedanı Gence ve Dvin Şeddâdîleri (948-1088)",520],["9786055402426","Şer’iyat Risalesi Mesture Erdelanî",160],["9786256605107","Şêrê Bitenê",150],["9786055402846","Şerefname ( I. Cilt )",500],["9789944360920","Şerefname ( II. Cilt )",360],["9786257383738","Şerefname Tewarîxê Qedîmê Kurdistan",460],["9786257383868","Şerha Bermahiya Dîwana Eliyê Herîrî",260],["9786257383677","Şerha Dîwana Ehmedê Xanî",400],["9786055402150","Şev Û Rojên Mubarek",260],["9786256605824","Şeva Giran",200],["9786257383356","Şevên Derîhesin",250],["9786257383981","Şêxê Biçûk Şêrê Çiyayên Pîranê",310],["9786055402716","Şeyh 'Adî Bin Müsafir",280],["9786055053864","Şeyh Said Hareketi Sonrası Pêçar Tenkil Harekâtı / 1927",280],["97800000000050","Şîfaul-Ekbad Fî Feraîdîl-Îbad",180],["97899443607221","Şîroveya Mem Û Zîna Ehmedê Xanî",850],["9786059413855","Şîva Miriyan",200],["9786055402532","Şivan Perwer – Efsaneya Zindî",360],["9786256605374","Şiyarkirina Gelê Kurd Di Hizrên Seîdê Kurdî de",260],["9786055053659","Tarihsel Süreçte Kürt Coğrafyasinda Tasavvuf ve Tarikatlar",400],["9786059413565","Tarîx Hisn Keyfa",750],["9786257383974","Tarîxa Meyafarqînê",800],["9786257383967","Tarîxa Meyafarqînê [Çapa Taybet / Özel Baskı]",1200],["9786059413947","Tarîxa Pêxemberan",580],["9786056545559","Tarîyîya Adirî de",150],["9786058536531","Tayê Bihuyîme",240],["9786056862540","Tayê Xususîyetê Fekê Şankuşî",200],["9780000000010","Tefsîra Qur’anê Nûra Qelban (Cilda 2. Qediya)",2200],["9786055053147","Tehtên Bilind",240],["9786257383257","Tembûrê Kurda",220],["9786056919329","Tenyayîya Xwu de",150],["9786059413077","Terceme-I Tevarîh-I Şeref Han",360],["9786256605619","Terîqu’n-Necat",200],["97899443602341","Tesîsul Qewaîd El-Eqaîd",350],["9786059413411","Tesrîfa Teremaxî",250],["9786055053314","Tevn",280],["9786059413725","Tuhfetul Muslimîn Xelata Musilmanan",550],["9789944360364","Tuhfetul Sibyan",48],["9789944360944","Turabidin’den Berriye’ye Aşiretler Dinler Diller Kültürler",550],["9786257383950","Tükenerek Direnmek / Köy Boşaltmalarından Hendek Olaylarına Ülke İçi Yerinden Edilmeyi/zorunlu Göçü Deneyimlemek",520],["9786259088891","Türklük Bagajı Kürt-Türk Evliliklerinde İmtiyaz ve Eşitsizlik",320],["9786059413329","Ulus Tartışmaları Bağlamında Xanî",260],["9786059413602","Varqilîn",260],["9786056919305","Vartî Kerda Pero Tehm Tera Şiyo",200],["9786256605398","Vateyê Verênanê Çêrmûgi",200],["9786057484758","Vengê Welatî: Dîwan II",330],["9786256605015","Vila Koyûn",280],["9786057121738","Vindîbiyayiş",200],["9786256605268","Vîr Û Vate Bi Kirdkî (Zazakî) Sohbetî, Kultur, Ziwan, Edebîyat, Sîyaset, Hûner",260],["9786056545566","Waştî",240],["9786257383547","Weke Şebnemekê",150],["9786256605749","Welatê Pirpirokan",200],["9786257383448","Welatê Sosinên Spî Fînlanda",250],["9786259203713","Wexta Hezkirinê",160],["9786054287604","Wextê Heskerdişî",150],["9786055053833","Xelata Biçûkan-Fiqh Û Eqîdeya Kurmancî",240],["9786256605800","Xelîl Xeyalî Modan - Kurdekî Sade Û Xwende",300],["9786256605589","Xerîbên Biyanî Di Diyaspora Almanyayê de Nifşên Yekemîn Ên Kurdên Koçber",350],["9786056919343","Xewn",260],["9786056919381","Xezala Koyê Bîngolî",200],["9786057484765","Xezeb",330],["9786055053178","Xoçvan [Çîrokên Nîvcomayî]",280],["9786257383899","Xosrew Û Şîrîn",580],["9786055053840","Xutbeyên Îbnu Nebate",350],["9786055402907","Xutbeyên Kurdî",260],["9786055053871","Xutbeyên Zelal Ji Bo Muslimanên Delal",330],["9786259203751","Xwezî Marê Bikujin",180],["9786257383714","Yakın Akrabalar Kemalist Türkiye & Pehlevi İran",470],["9786256605879","Yamalı Peyzaj Kürtçe Roman Yazımının Özerk Bir Alan Olarak Oluşumu (1935-2017)",440],["9786057484734","Yar Û Mirad - I",300],["9786059413688","Yaşayıp Gördükçe",260],["9786055402617","Yazılı Kaynaklarda Çermik",280],["9789944360456","Yezdan Dizane",200],["9786256605558","Zargotina Çîyayê Sîpanê Destan/çîrok/meselok",440],["9786257383516","Zarokên LI Ber Tevna Mehfûrê",200],["9786054287536","Zeman Sey Fekê Kardî Bî",250],["9786055402273","Zembîlfiroş",250],["9786058536548","Zere Ra",200],["9786055053956","Zeviya Ramûsanê",200],["9786059413732","Zimanşûjin",160],["9786257383851","Zirkan Aşiretinden Hazro Beyleri",260],["9786056862557","Ziwanê Şima Çi Weş O!",330],["9786055053567","Zor Olanı Başarmak",250]]</script>
+<script>
+(function(){
+'use strict';
+const $=s=>document.querySelector(s);
+const LS={
+  get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},
+  set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){toast('Kayıt hatası: tarayıcı hafızası dolu olabilir')}}
+};
+const money=n=>(Number(n)||0).toLocaleString('tr-TR',{style:'currency',currency:'TRY'});
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm=s=>String(s||'').toLocaleLowerCase('tr').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/ı/g,'i');
+const cleanIsbn=v=>{
+  if(typeof v==='number')v=Math.round(v).toString();
+  return String(v==null?'':v).replace(/[^0-9Xx]/g,'').toUpperCase();
+};
+const parsePrice=v=>{
+  if(typeof v==='number')return v;
+  let s=String(v==null?'':v).replace(/[^\d.,]/g,'');
+  if(s.includes(',')&&s.includes('.')){
+    s=s.lastIndexOf(',')>s.lastIndexOf('.')?s.replace(/\./g,'').replace(',','.'):s.replace(/,/g,'');
+  }else s=s.replace(',','.');
+  return parseFloat(s)||0;
+};
+let tT;
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.remove('hidden');clearTimeout(tT);tT=setTimeout(()=>t.classList.add('hidden'),2200)}
+
+/* ---------- Durum ---------- */
+let books=LS.get('fuar_books',[]);
+let cart=LS.get('fuar_cart',[]);
+let sales=LS.get('fuar_sales',[]);
+let byIsbn={},byKey={};
+const keyOf=b=>b.isbn.length>=8?b.isbn:b.isbn+'|'+norm(b.name);
+function rebuild(){
+  byIsbn={};byKey={};
+  books.forEach(b=>{b._k=keyOf(b);b._n=norm(b.name+' '+b.author);byKey[b._k]=b;if(b.isbn.length>=8)byIsbn[b.isbn]=b});
+  $('#hdrInfo').textContent=books.length+' kitap';
+}
+rebuild();
+const seed=JSON.parse($('#sampleData').textContent);
+function saveBooks(){LS.set('fuar_books',books.map(b=>({isbn:b.isbn,name:b.name,author:b.author,price:b.price})))}
+function loadSample(){
+  books=seed.map(r=>({isbn:r[0],name:r[1],author:'',price:r[2]}));
+  saveBooks();rebuild();
+}
+let seeded=false;
+if(!books.length&&!LS.get('fuar_seeded',false)){loadSample();LS.set('fuar_seeded',true);seeded=true}
+
+/* ---------- Sekmeler ---------- */
+let curTab='sale';
+function showTab(t){
+  curTab=t;
+  ['sale','sales','settings'].forEach(x=>$('#tab-'+x).classList.toggle('hidden',x!==t));
+  document.querySelectorAll('.tabBtn').forEach(b=>{
+    const on=b.dataset.tab===t;
+    b.classList.toggle('text-indigo-700',on);b.classList.toggle('bg-indigo-50',on);
+  });
+  if(t==='sales')renderSales();
+  if(t==='settings')renderStats();
+  if(t==='sale')$('#q').focus();
+  renderCart();
+}
+document.querySelectorAll('.tabBtn').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+
+/* ---------- Arama ve barkod ---------- */
+const q=$('#q');
+const fine=matchMedia('(pointer:fine)').matches;
+function focusQ(){if(fine)q.focus()}
+function search(text){
+  const n=norm(text).trim();if(!n)return[];
+  const d=cleanIsbn(text);
+  const words=n.split(/\s+/);
+  return books.filter(b=>(d.length>=3&&b.isbn.includes(d))||words.every(w=>b._n.includes(w))).slice(0,30);
+}
+function renderResults(){
+  const box=$('#results');const text=q.value.trim();
+  if(!text){box.innerHTML='';return}
+  if(!books.length){box.innerHTML='<p class="text-sm text-amber-700 p-2">Kitap listesi boş. Ayarlar sekmesinden dosya yükleyin.</p>';return}
+  const r=search(text);
+  box.innerHTML=r.length?r.map(b=>`<button data-i="${esc(b._k)}" class="res w-full text-left bg-slate-50 hover:bg-indigo-50 rounded-xl p-3 flex items-center gap-3">
+      <div class="flex-1 min-w-0"><div class="font-semibold truncate">${esc(b.name)}</div><div class="text-xs text-slate-500 truncate">${esc(b.author)} · ${esc(b.isbn)}</div></div>
+      <div class="font-bold text-indigo-700 whitespace-nowrap">${money(b.price)}</div></button>`).join('')
+    :'<div class="p-2"><p class="text-sm text-slate-500">Sonuç yok.</p><button class="man2 mt-2 bg-indigo-600 text-white rounded-xl px-4 py-2 font-semibold">➕ Elle ekle</button></div>';
+}
+q.addEventListener('input',renderResults);
+$('#results').addEventListener('click',e=>{
+  if(e.target.closest('.man2')){openManual(prefill());return}
+  const b=e.target.closest('.res');if(!b)return;
+  addBook(byKey[b.dataset.i]);clearQ();
+});
+function clearQ(){q.value='';renderResults();focusQ()}
+q.addEventListener('keydown',e=>{
+  if(e.key!=='Enter')return;
+  e.preventDefault();
+  const raw=q.value.trim();if(!raw)return;
+  const d=cleanIsbn(raw);
+  if(d.length>=8&&byIsbn[d]){addByIsbn(d);clearQ();return}
+  if(/^\d{8,14}$/.test(raw.replace(/\s|-/g,''))){unknown(d);clearQ();return}
+  const r=search(raw);
+  if(r.length===1){addBook(r[0]);clearQ()}
+});
+function unknown(code){openManual({isbn:code})}
+function prefill(){
+  const t=q.value.trim();
+  return /^[\d\-\s]{8,}$/.test(t)?{isbn:cleanIsbn(t)}:{name:t};
+}
+function openManual(pre){
+  pre=pre||{};
+  $('#manName').value=pre.name||'';$('#manAuthor').value=pre.author||'';
+  $('#manPrice').value='';$('#manIsbn').value=pre.isbn||'';$('#manSave').checked=true;
+  $('#manual').classList.remove('hidden');
+  setTimeout(()=>(pre.name?$('#manPrice'):$('#manName')).focus(),50);
+}
+function closeManual(){$('#manual').classList.add('hidden')}
+$('#manualBtn').onclick=()=>openManual(prefill());
+$('#manCancel').onclick=closeManual;
+$('#manOk').onclick=()=>{
+  const name=$('#manName').value.trim(),author=$('#manAuthor').value.trim();
+  const ps=$('#manPrice').value.trim(),isbn=cleanIsbn($('#manIsbn').value);
+  if(!name){toast('Eser adı yazın');return}
+  if(!ps){toast('Fiyat yazın');return}
+  const price=parsePrice(ps);
+  if($('#manSave').checked){
+    const b={isbn,name,author,price},k=keyOf(b);
+    const i=books.findIndex(x=>keyOf(x)===k);
+    if(i>=0)books[i]=b;else books.push(b);
+    saveBooks();rebuild();addBook(byKey[k]);
+  }else addItem({key:'x:'+isbn+'|'+norm(name)+'|'+price,isbn,name,author,price,manual:true});
+  closeManual();clearQ();
+};
+
+/* ---------- Sepet ---------- */
+function addBook(b){if(b)addItem({key:b._k,isbn:b.isbn,name:b.name,author:b.author,price:b.price})}
+function addByIsbn(i){addBook(byIsbn[i])}
+function addItem(it){
+  const f=cart.find(c=>(c.key||c.isbn)===(it.key||it.isbn)&&c.price===it.price&&!!c.gift===!!it.gift);
+  if(f)f.qty++;else cart.push(Object.assign({qty:1},it));
+  saveCart();toast('Eklendi: '+it.name);
+}
+function saveCart(){LS.set('fuar_cart',cart);renderCart()}
+function toggleGift(i){
+  const c=cart[i],toGift=!c.gift;
+  const nu=Object.assign({},c,{qty:1,gift:toGift,price:toGift?0:(c.orig!=null?c.orig:c.price),orig:toGift?c.price:undefined});
+  c.qty--;
+  let at=i;
+  if(c.qty<1)cart.splice(i,1);else at=i+1;
+  const f=cart.find(x=>(x.key||x.isbn)===(nu.key||nu.isbn)&&!!x.gift===toGift&&x.price===nu.price);
+  if(f)f.qty++;else cart.splice(at,0,nu);
+  toast(toGift?'Hediye yapıldı 🎁':'Hediye kaldırıldı');
+}
+function totals(){
+  const sub=cart.reduce((s,c)=>s+c.price*c.qty,0);
+  const v=parseFloat($('#disc').value)||0;
+  const d=$('#discType').value==='pct'?sub*Math.min(v,100)/100:Math.min(v,sub);
+  return{sub,v,d,total:Math.max(0,sub-d)};
+}
+function renderCart(){
+  const box=$('#cart');
+  box.innerHTML=cart.length?cart.map((c,i)=>`<div class="bg-white rounded-2xl shadow p-3 ${c.gift?'ring-2 ring-pink-300':''}">
+    <div class="flex items-start gap-2">
+      <div class="flex-1 min-w-0"><div class="font-semibold">${esc(c.name)}${c.manual?' <span class="text-xs text-amber-600">(elle)</span>':''}${c.gift?' <span class="text-xs bg-pink-100 text-pink-700 rounded px-1.5 py-0.5">🎁 Hediye</span>':''}</div>
+        <div class="text-xs text-slate-500">${c.gift?'<s>'+money(c.orig)+'</s> → ':''}${money(c.price)}${c.author?' · '+esc(c.author):''}${c.isbn?' · '+esc(c.isbn):''}</div></div>
+      <button data-a="d" data-i="${i}" class="text-red-500 text-xl px-1">✕</button></div>
+    <div class="flex items-center gap-2 mt-2">
+      <button data-a="g" data-i="${i}" class="px-3 h-9 rounded-lg text-sm font-semibold ${c.gift?'bg-pink-600 text-white':'bg-pink-50 text-pink-700'}">🎁 ${c.gift?'Hediyeyi kaldır':(c.qty>1?'1 adedi hediye yap':'Hediye yap')}</button>
+      <div class="flex items-center gap-1 ml-auto">
+        <button data-a="m" data-i="${i}" class="w-9 h-9 rounded-lg bg-slate-200 text-lg font-bold">−</button>
+        <span class="w-7 text-center font-bold">${c.qty}</span>
+        <button data-a="p" data-i="${i}" class="w-9 h-9 rounded-lg bg-slate-200 text-lg font-bold">+</button></div>
+      <div class="w-20 text-right font-bold">${c.gift?'Hediye':money(c.price*c.qty)}</div></div></div>`).join('')
+    :'<p class="text-center text-slate-400 py-6">Sepet boş. Barkod okutun.</p>';
+  const t=totals();
+  $('#cartBar').classList.toggle('hidden',!cart.length||curTab!=='sale');
+  $('#total').textContent=money(t.total);
+  $('#subLine').textContent=t.d>0?'Ara toplam '+money(t.sub):'';
+}
+$('#cart').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  const i=+b.dataset.i,a=b.dataset.a;
+  if(a==='p')cart[i].qty++;
+  else if(a==='m'){cart[i].qty--;if(cart[i].qty<1)cart.splice(i,1)}
+  else if(a==='d')cart.splice(i,1);
+  else if(a==='g')toggleGift(i);
+  saveCart();
+});
+$('#disc').oninput=$('#discType').onchange=renderCart;
+$('#clearCart').onclick=()=>{if(cart.length&&confirm('Sepet temizlensin mi?')){cart=[];$('#disc').value=0;saveCart()}};
+$('#confirm').onclick=()=>{
+  if(!cart.length)return;
+  const t=totals();
+  const adet=cart.reduce((s,c)=>s+c.qty,0);
+  const hed=cart.filter(c=>c.gift).reduce((s,c)=>s+c.qty,0);
+  if(!confirm(adet+' adet kitap'+(hed?' (+'+hed+' hediye dahil)':'')+', toplam '+money(t.total)+'\nSatış onaylansın mı?'))return;
+  sales.push({id:Date.now(),t:new Date().toISOString(),items:cart.map(c=>({isbn:c.isbn,name:c.name,author:c.author||'',price:c.price,qty:c.qty,gift:!!c.gift,orig:c.orig})),
+    sub:t.sub,disc:t.d,total:t.total});
+  LS.set('fuar_sales',sales);
+  cart=[];$('#disc').value=0;saveCart();
+  toast('Satış kaydedildi ✓');focusQ();
+};
+
+/* ---------- Satış kayıtları ---------- */
+function renderSales(){
+  const today=new Date().toDateString();
+  const td=sales.filter(s=>new Date(s.t).toDateString()===today);
+  const cnt=a=>a.reduce((s,x)=>s+x.items.reduce((k,i)=>k+i.qty,0),0);
+  const sum=a=>a.reduce((s,x)=>s+x.total,0);
+  const gf=a=>{const g=a.reduce((s,x)=>s+x.items.filter(i=>i.gift).reduce((k,i)=>k+i.qty,0),0);return g?' · '+g+' hediye':''};
+  const card=(l,v,s)=>`<div class="bg-white rounded-2xl shadow p-3"><div class="text-xs text-slate-500">${l}</div><div class="text-xl font-bold text-indigo-700">${v}</div><div class="text-xs text-slate-500">${s}</div></div>`;
+  $('#salesSummary').innerHTML=card('Bugün',money(sum(td)),td.length+' satış · '+cnt(td)+' kitap'+gf(td))+card('Toplam',money(sum(sales)),sales.length+' satış · '+cnt(sales)+' kitap'+gf(sales));
+  $('#salesList').innerHTML=sales.length?sales.slice().reverse().map(s=>{
+    const d=new Date(s.t);
+    return `<div class="bg-white rounded-2xl shadow p-3">
+      <div class="flex items-center justify-between">
+        <span class="text-xs text-slate-500">${d.toLocaleDateString('tr-TR')} ${d.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}</span>
+        <button data-id="${s.id}" class="delSale text-xs text-red-600 font-semibold">İptal et</button></div>
+      <div class="text-sm mt-1">${s.items.map(i=>esc(i.name)+' ×'+i.qty+(i.gift?' 🎁':'')).join('<br>')}</div>
+      <div class="text-right font-bold mt-1">${money(s.total)}${s.disc>0?' <span class="text-xs font-normal text-slate-500">(indirim '+money(s.disc)+')</span>':''}</div></div>`}).join('')
+    :'<p class="text-center text-slate-400 py-6">Henüz satış yok.</p>';
+}
+$('#salesList').addEventListener('click',e=>{
+  const b=e.target.closest('.delSale');if(!b)return;
+  if(!confirm('Bu satış kaydı silinsin mi?'))return;
+  sales=sales.filter(s=>String(s.id)!==b.dataset.id);
+  LS.set('fuar_sales',sales);renderSales();
+});
+
+/* ---------- Ayarlar: liste yükleme ---------- */
+function renderStats(){
+  $('#bookStats').textContent=books.length?books.length+' kitap yüklü.':'Henüz kitap listesi yüklenmedi.';
+}
+let raw=null;
+function parseCSV(t){
+  t=t.replace(/^\uFEFF/,'');
+  const first=t.split(/\r?\n/)[0];
+  const d=[';','\t',','].map(c=>[c,first.split(c).length]).sort((a,b)=>b[1]-a[1])[0][0];
+  const rows=[];let r=[],f='',inQ=false;
+  for(let i=0;i<t.length;i++){
+    const c=t[i];
+    if(inQ){if(c==='"'){if(t[i+1]==='"'){f+='"';i++}else inQ=false}else f+=c}
+    else if(c==='"')inQ=true;
+    else if(c===d){r.push(f);f=''}
+    else if(c==='\n'){r.push(f);rows.push(r);r=[];f=''}
+    else if(c!=='\r')f+=c;
+  }
+  if(f||r.length){r.push(f);rows.push(r)}
+  return rows.filter(r=>r.some(x=>String(x).trim()));
+}
+$('#file').onchange=e=>{
+  const file=e.target.files[0];if(!file)return;
+  const rd=new FileReader();
+  if(/\.(xlsx|xls)$/i.test(file.name)){
+    if(typeof XLSX==='undefined'){toast('Excel okuyucu yüklenemedi (internet gerekli). CSV deneyin.');return}
+    rd.onload=()=>{
+      try{
+        const wb=XLSX.read(rd.result,{type:'array'});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
+        openMap(rows.filter(r=>r.some(x=>String(x).trim())));
+      }catch(err){toast('Dosya okunamadı')}
+    };
+    rd.readAsArrayBuffer(file);
+  }else{
+    rd.onload=()=>{
+      let t=new TextDecoder('utf-8').decode(rd.result);
+      if(t.includes('\uFFFD'))t=new TextDecoder('windows-1254').decode(rd.result);
+      openMap(parseCSV(t));
+    };
+    rd.readAsArrayBuffer(file);
+  }
+  e.target.value='';
+};
+function guess(head,key,re){
+  const saved=(LS.get('fuar_map',{}))[key];
+  let i=saved?head.findIndex(h=>norm(h)===norm(saved)):-1;
+  if(i<0)i=head.findIndex(h=>re.test(norm(h)));
+  return i;
+}
+function openMap(rows){
+  if(rows.length<2){toast('Dosyada veri bulunamadı');return}
+  raw=rows;
+  const head=rows[0].map(h=>String(h).trim());
+  const opt=(sel,i,none)=>{
+    $(sel).innerHTML=(none?'<option value="-1">— yok —</option>':'')+head.map((h,k)=>`<option value="${k}">${esc(h||('Sütun '+(k+1)))}</option>`).join('');
+    $(sel).value=String(i<0&&!none?0:i);
+  };
+  opt('#mIsbn',guess(head,'isbn',/isbn|barkod|barcode|ean/),false);
+  opt('#mName',guess(head,'name',/kitap|urun|baslik|title|^ad$|^adi$|^isim|name/),false);
+  opt('#mAuthor',guess(head,'author',/yazar|author/),true);
+  opt('#mPrice',guess(head,'price',/fiyat|price|tutar|satis/),false);
+  $('#mapInfo').textContent=(rows.length-1)+' satır bulundu. Sütunları kontrol edin:';
+  $('#mapBox').classList.remove('hidden');
+}
+$('#cancelImport').onclick=()=>{raw=null;$('#mapBox').classList.add('hidden')};
+$('#doImport').onclick=()=>{
+  if(!raw)return;
+  const ci=+$('#mIsbn').value,cn=+$('#mName').value,ca=+$('#mAuthor').value,cp=+$('#mPrice').value;
+  if(ci===cn){toast('ISBN ve ad aynı sütun olamaz');return}
+  const head=raw[0].map(h=>String(h).trim());
+  LS.set('fuar_map',{isbn:head[ci],name:head[cn],author:ca>=0?head[ca]:'',price:head[cp]});
+  const map=$('#replaceAll').checked?{}:Object.fromEntries(books.map(b=>[keyOf(b),b]));
+  let added=0,upd=0,skip=0;
+  raw.slice(1).forEach(r=>{
+    const isbn=cleanIsbn(r[ci]),name=String(r[cn]==null?'':r[cn]).trim();
+    if(!isbn||!name){skip++;return}
+    const b={isbn,name,author:ca>=0?String(r[ca]==null?'':r[ca]).trim():'',price:parsePrice(r[cp])};
+    const k=keyOf(b);
+    if(map[k])upd++;else added++;
+    map[k]=b;
+  });
+  books=Object.values(map);
+  LS.set('fuar_books',books.map(b=>({isbn:b.isbn,name:b.name,author:b.author,price:b.price})));
+  rebuild();renderStats();
+  raw=null;$('#mapBox').classList.add('hidden');
+  toast(added+' yeni, '+upd+' güncellendi'+(skip?', '+skip+' atlandı':''));
+};
+$('#loadSample').onclick=()=>{
+  if(books.length&&!confirm('Mevcut liste silinip örnek liste yüklensin mi?'))return;
+  loadSample();renderStats();toast(books.length+' örnek kitap yüklendi');
+};
+$('#clearBooks').onclick=()=>{
+  if(books.length&&confirm('Tüm kitap listesi silinsin mi?')){books=[];LS.set('fuar_books',[]);rebuild();renderStats()}
+};
+
+
+/* ---------- Kamerayla barkod ---------- */
+let stream=null,scanning=false,lastCode='',lastT=0,zx=null,det=null,ac=null;
+function beep(){
+  try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();const o=ac.createOscillator(),g=ac.createGain();
+    o.connect(g);g.connect(ac.destination);o.frequency.value=880;g.gain.value=.1;o.start();o.stop(ac.currentTime+.12)}catch(e){}
+  if(navigator.vibrate)navigator.vibrate(60);
+}
+function camInfo(){
+  const t=totals();
+  $('#camInfo').textContent=cart.reduce((s,c)=>s+c.qty,0)+' kitap · '+money(t.total);
+}
+async function openCam(){
+  $('#cam').classList.remove('hidden');$('#camErr').classList.add('hidden');$('#camMsg').textContent='';camInfo();
+  lastCode='';lastT=0;
+  if(!window.isSecureContext||!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){camFail(null);return}
+  try{
+    det=null;
+    if('BarcodeDetector' in window){
+      try{det=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','code_128']})}catch(e){det=null}
+    }
+    if(det){
+      stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280}},audio:false});
+      const v=$('#camVideo');v.srcObject=stream;await v.play();
+      scanning=true;detLoop();
+    }else if(window.ZXing){
+      zx=new ZXing.BrowserMultiFormatReader(zxHints(),250);
+      scanning=true;
+      await zx.decodeFromConstraints({video:{facingMode:{ideal:'environment'}},audio:false},'camVideo',(res)=>{if(res&&scanning)onCode(res.getText())});
+    }else throw new Error('nolib');
+  }catch(e){
+    stopCam();camFail(e);
+  }
+}
+async function detLoop(){
+  if(!scanning||!det)return;
+  try{const r=await det.detect($('#camVideo'));if(r.length)onCode(r[0].rawValue)}catch(e){}
+  setTimeout(detLoop,150);
+}
+function zxHints(){
+  const h=new Map();
+  h.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[ZXing.BarcodeFormat.EAN_13,ZXing.BarcodeFormat.EAN_8,ZXing.BarcodeFormat.UPC_A,ZXing.BarcodeFormat.CODE_128]);
+  h.set(ZXing.DecodeHintType.TRY_HARDER,true);
+  return h;
+}
+function stopCam(){
+  scanning=false;
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
+  if(zx){try{zx.reset()}catch(e){}zx=null}
+  $('#camVideo').srcObject=null;
+}
+function closeCam(){
+  stopCam();
+  $('#cam').classList.add('hidden');$('#camErr').classList.add('hidden');
+  renderCart();
+}
+function camFail(e){
+  let t;
+  const n=e&&e.name;
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||!window.isSecureContext)
+    t='Bu sayfa güvenli (https) adresten açılmadığı için tarayıcı kamerayı vermiyor. Dosyayı bir https adrese yükleyip oradan açın.';
+  else if(n==='NotAllowedError')
+    t='Kamera izni verilmedi veya engellendi. Adres çubuğundaki kilit simgesi → Site ayarları → Kamera → İzin ver. WhatsApp, Telegram, e-posta gibi uygulamaların içinde açtıysanız Chrome veya Safari ile açın.';
+  else if(n==='NotFoundError')t='Bu cihazda kamera bulunamadı.';
+  else if(e&&e.message==='nolib')t='Barkod kütüphanesi yüklenemedi (internet gerekir).';
+  else t='Kamera açılamadı'+(e&&e.message?' ('+e.message+')':'')+'.';
+  if(/^(file|content):/.test(location.protocol))t+=' Şu an dosya olarak açılmış durumda ('+location.protocol+').';
+  $('#camErrTxt').textContent=t;
+  $('#camErr').classList.remove('hidden');
+}
+$('#photo').onchange=async e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  toast('Fotoğraf okunuyor…');
+  const url=URL.createObjectURL(f);
+  try{
+    const img=new Image();img.src=url;await img.decode();
+    let code=null;
+    if('BarcodeDetector' in window){
+      try{const d=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','code_128']});const r=await d.detect(img);if(r.length)code=r[0].rawValue}catch(_){}
+    }
+    if(!code&&window.ZXing){
+      try{const res=await new ZXing.BrowserMultiFormatReader(zxHints()).decodeFromImageElement(img);code=res.getText()}catch(_){}
+    }
+    if(code){lastCode='';onCode(code)}
+    else toast('Barkod okunamadı. Daha yakından, düz ve net çekin.');
+  }catch(err){toast('Fotoğraf okunamadı')}
+  finally{URL.revokeObjectURL(url)}
+};
+function onCode(code){
+  const d=cleanIsbn(code);if(!d)return;
+  const now=Date.now();
+  if(d===lastCode&&now-lastT<2500){lastT=now;return}
+  lastCode=d;lastT=now;beep();
+  const b=byIsbn[d];
+  if(b){addBook(b);$('#camMsg').textContent='✓ '+b.name;camInfo()}
+  else{closeCam();toast('Listede yok: '+d);setTimeout(()=>unknown(d),300)}
+}
+$('#camBtn').onclick=openCam;
+$('#camClose').onclick=closeCam;
+
+/* Barkod okuyucu odağı: boş bir yere dokununca arama kutusuna dön */
+document.addEventListener('click',e=>{
+  if(curTab==='sale'&&fine&&!e.target.closest('button,input,select,label'))focusQ();
+});
+
+showTab('sale');
+if(seeded)toast(books.length+' örnek kitap yüklendi');
+})();
+</script>
+</body>
+</html>
