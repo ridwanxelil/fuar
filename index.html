@@ -2,9 +2,9 @@
 <!--
 RX-PROGRESS v1
 Proje: Fuar Satış
-Klasor: fuar-satis | Tur: tek dosya HTML (Tailwind CSS CDN, saf JavaScript) | Surum: 1.5.0
-Tamamlanan: 1. Temel: liste yükleme + eşleştirme, arama, barkod okuyucu, sepet, indirim, onay, satış kayıtları — v1.0.0 — 2026-11-21; 2. Kamerayla barkod tarama + örnek veri (datanu.xlsx) — v1.1.0 — 2026-11-21; 3. Ödeme türü (nakit/kart), rapor (Bugün/Tümü ciro, nakit/kart, indirim, hediye, en çok satanlar), CSV/Excel dışa aktarma, yedek al / yedekten yükle — v1.4.0 — 2026-11-21; 4. Kapaktan bul (📖): kapak fotoğrafından Claude ile ad/yazar/ISBN okuma + listeyle benzerlik eşleştirme — v1.5.0 — 2026-11-21
-Siradaki: 5. (isteğe bağlı fikirler) Satış fişi/yazdırma, kitap listesinde fiyat düzenleme, stok sayımı, yayınevi alanı
+Klasor: fuar-satis | Tur: tek dosya HTML (Tailwind CSS CDN, saf JavaScript) | Surum: 1.7.0
+Tamamlanan: 1. Temel: liste yükleme + eşleştirme, arama, barkod okuyucu, sepet, indirim, onay, satış kayıtları — v1.0.0 — 2026-11-21; 2. Kamerayla barkod tarama + örnek veri (datanu.xlsx) — v1.1.0 — 2026-11-21; 3. Ödeme türü (nakit/kart), rapor (Bugün/Tümü ciro, nakit/kart, indirim, hediye, en çok satanlar), CSV/Excel dışa aktarma, yedek al / yedekten yükle — v1.4.0 — 2026-11-21; 4. Kapaktan bul (📖): kapak fotoğrafından Claude ile ad/yazar/ISBN okuma + listeyle benzerlik eşleştirme — v1.5.0 — 2026-11-21; 5. Tahsilat: satışı onayla → Nakit/Kart/Havale seçimi, tahsilat anında yazılır — v1.6.0 — 2026-11-21; 6. Ürünler sekmesi: liste görüntüleme/arama, düzeltme, yeni ürün ekleme, silme, "barkodu eksik" filtresi — v1.7.0 — 2026-11-21
+Siradaki: 7. (isteğe bağlı fikirler) Satış fişi/yazdırma, kitap listesinde fiyat düzenleme, stok sayımı, yayınevi alanı
 Kalan: yok
 Kararlar: Veri dosyası CSV (; , veya sekme ayraçlı, UTF-8 / Windows-1254) ya da Excel (.xlsx/.xls, SheetJS CDN) olabilir.; Sütun eşleştirme ekranı vardır; seçim başlık adına göre hatırlanır.; Tek arama kutusu hem barkod okuyucu (klavye gibi çalışan, Enter ile biten) hem arama içindir.; Listede olmayan barkod: elle ad ve fiyat girilerek sepete eklenebilir (listeye eklenmez).; Tailwind CDN ilk açılışta intern
 Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
@@ -14,7 +14,7 @@ Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Fuar Satış v1.5.0</title>
+<title>Fuar Satış v1.7.0</title>
 <script src="https://cdn.tailwindcss.com/3.4.17"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
@@ -27,12 +27,12 @@ Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
 
 <header class="bg-indigo-700 text-white px-4 py-3 sticky top-0 z-20 shadow">
   <div class="max-w-3xl mx-auto flex items-center justify-between">
-    <h1 class="text-lg font-bold">📚 Fuar Satış <span class="text-xs font-normal opacity-80">v1.5.0</span></h1>
+    <h1 class="text-lg font-bold">📚 Fuar Satış <span class="text-xs font-normal opacity-80">v1.7.0</span></h1>
     <span id="hdrInfo" class="text-xs opacity-80"></span>
   </div>
 </header>
 
-<main class="max-w-3xl mx-auto p-3 pb-56">
+<main class="max-w-3xl mx-auto p-3 pb-48">
 
   <!-- SATIŞ -->
   <section id="tab-sale">
@@ -67,6 +67,21 @@ Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
     </div>
     <h2 class="mb-2 px-1 text-sm font-semibold text-slate-500 uppercase">Satış kayıtları</h2>
     <div id="salesList" class="space-y-2"></div>
+  </section>
+
+  <!-- ÜRÜNLER -->
+  <section id="tab-products" class="hidden">
+    <div class="bg-white rounded-2xl shadow p-3 space-y-2">
+      <input id="plQ" type="text" autocomplete="off" placeholder="Ürün ara: ad, yazar veya barkod"
+        class="w-full border-2 border-indigo-200 focus:border-indigo-500 outline-none rounded-xl px-4 py-3 text-base">
+      <div class="flex gap-2">
+        <button id="plAdd" class="flex-1 bg-emerald-600 text-white rounded-xl py-3 font-semibold">➕ Yeni ürün</button>
+        <button id="plBad" class="rounded-xl px-3 py-3 font-semibold text-sm"></button>
+      </div>
+      <div id="plInfo" class="text-xs text-slate-500"></div>
+    </div>
+    <div id="plList" class="mt-3 space-y-2"></div>
+    <button id="plMore" class="hidden w-full mt-3 bg-slate-200 rounded-xl py-3 font-semibold"></button>
   </section>
 
   <!-- AYARLAR -->
@@ -117,10 +132,6 @@ Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
 <!-- Sepet çubuğu -->
 <div id="cartBar" class="hidden fixed left-0 right-0 bottom-16 z-20 px-3">
   <div class="max-w-3xl mx-auto bg-white rounded-2xl shadow-2xl border p-3">
-    <div class="grid grid-cols-2 gap-2 mb-2">
-      <button id="payNakit" class="rounded-xl py-2 font-semibold">💵 Nakit</button>
-      <button id="payKart" class="rounded-xl py-2 font-semibold">💳 Kart</button>
-    </div>
     <div class="flex items-center gap-2 mb-2 text-sm">
       <span class="text-slate-500">İndirim</span>
       <input id="disc" type="number" min="0" step="any" inputmode="decimal" class="w-20 border rounded-lg p-1.5 text-right" value="0">
@@ -136,9 +147,10 @@ Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
 </div>
 
 <nav class="fixed bottom-0 left-0 right-0 z-30 bg-white border-t" style="padding-bottom:env(safe-area-inset-bottom,0)">
-  <div class="max-w-3xl mx-auto grid grid-cols-3 text-sm font-semibold">
+  <div class="max-w-3xl mx-auto grid grid-cols-4 text-sm font-semibold">
     <button data-tab="sale" class="tabBtn py-3">🛒 Satış</button>
     <button data-tab="sales" class="tabBtn py-3">🧾 Satışlar</button>
+    <button data-tab="products" class="tabBtn py-3">📚 Ürünler</button>
     <button data-tab="settings" class="tabBtn py-3">⚙️ Ayarlar</button>
   </div>
 </nav>
@@ -179,6 +191,38 @@ Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
       <button id="manOk" class="flex-1 bg-emerald-600 text-white rounded-xl py-3 font-bold">Sepete ekle</button>
       <button id="manCancel" class="px-5 bg-slate-200 rounded-xl font-semibold">Vazgeç</button>
     </div>
+  </div>
+</div>
+
+<div id="productBox" class="hidden fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-3">
+  <div class="bg-white w-full max-w-md rounded-2xl p-4 space-y-3 max-h-[90vh] overflow-y-auto">
+    <h2 id="pbTitle" class="font-bold text-lg"></h2>
+    <label class="block text-xs text-slate-500">Kitap adı *<input id="pbName" type="text" class="w-full border-2 border-slate-200 focus:border-indigo-500 outline-none rounded-xl px-3 py-3 text-base text-slate-800 mt-1"></label>
+    <label class="block text-xs text-slate-500">Yazar<input id="pbAuthor" type="text" class="w-full border-2 border-slate-200 focus:border-indigo-500 outline-none rounded-xl px-3 py-3 text-base text-slate-800 mt-1"></label>
+    <div class="flex gap-2">
+      <label class="block text-xs text-slate-500 w-1/2">Fiyat ₺ *<input id="pbPrice" type="text" inputmode="decimal" class="w-full border-2 border-slate-200 focus:border-indigo-500 outline-none rounded-xl px-3 py-3 text-base text-slate-800 mt-1"></label>
+      <label class="block text-xs text-slate-500 w-1/2">Barkod / ISBN<input id="pbIsbn" type="text" inputmode="numeric" class="w-full border-2 border-slate-200 focus:border-indigo-500 outline-none rounded-xl px-3 py-3 text-base text-slate-800 mt-1"></label>
+    </div>
+    <div class="flex gap-2">
+      <button id="pbOk" class="flex-1 bg-emerald-600 text-white rounded-xl py-3 font-bold">Kaydet</button>
+      <button id="pbDel" class="px-4 bg-red-50 text-red-700 rounded-xl font-semibold">Sil</button>
+      <button id="pbCancel" class="px-4 bg-slate-200 rounded-xl font-semibold">Vazgeç</button>
+    </div>
+  </div>
+</div>
+
+<div id="payBox" class="hidden fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-3">
+  <div class="bg-white w-full max-w-md rounded-2xl p-4 space-y-3">
+    <h2 class="font-bold text-lg">Tahsilat</h2>
+    <div class="text-center">
+      <div id="paySub" class="text-sm text-slate-500"></div>
+      <div id="payTotal" class="text-4xl font-bold text-indigo-700"></div>
+    </div>
+    <p class="text-sm text-slate-500 text-center">Ödeme şeklini seçin, tahsilat hemen yazılır.</p>
+    <button data-pay="nakit" class="payOpt w-full bg-emerald-600 text-white rounded-xl py-4 font-bold text-lg">💵 Nakit</button>
+    <button data-pay="kart" class="payOpt w-full bg-sky-600 text-white rounded-xl py-4 font-bold text-lg">💳 Kart</button>
+    <button data-pay="havale" class="payOpt w-full bg-violet-600 text-white rounded-xl py-4 font-bold text-lg">🏦 Havale</button>
+    <button id="payCancel" class="w-full bg-slate-200 rounded-xl py-3 font-semibold">Vazgeç</button>
   </div>
 </div>
 
@@ -232,7 +276,7 @@ let byIsbn={},byKey={};
 const keyOf=b=>b.isbn.length>=8?b.isbn:b.isbn+'|'+norm(b.name);
 function rebuild(){
   byIsbn={};byKey={};
-  books.forEach(b=>{b._k=keyOf(b);b._n=norm(b.name+' '+b.author);byKey[b._k]=b;if(b.isbn.length>=8)byIsbn[b.isbn]=b});
+  books.forEach(b=>{b._k=keyOf(b);b._g=null;b._gn=null;b._n=norm(b.name+' '+b.author);byKey[b._k]=b;if(b.isbn.length>=8)byIsbn[b.isbn]=b});
   $('#hdrInfo').textContent=books.length+' kitap';
 }
 rebuild();
@@ -249,12 +293,13 @@ if(!books.length&&!LS.get('fuar_seeded',false)){loadSample();LS.set('fuar_seeded
 let curTab='sale';
 function showTab(t){
   curTab=t;
-  ['sale','sales','settings'].forEach(x=>$('#tab-'+x).classList.toggle('hidden',x!==t));
+  ['sale','sales','products','settings'].forEach(x=>$('#tab-'+x).classList.toggle('hidden',x!==t));
   document.querySelectorAll('.tabBtn').forEach(b=>{
     const on=b.dataset.tab===t;
     b.classList.toggle('text-indigo-700',on);b.classList.toggle('bg-indigo-50',on);
   });
   if(t==='sales')renderSales();
+  if(t==='products')renderProducts();
   if(t==='settings')renderStats();
   if(t==='sale')$('#q').focus();
   renderCart();
@@ -265,11 +310,11 @@ document.querySelectorAll('.tabBtn').forEach(b=>b.onclick=()=>showTab(b.dataset.
 const q=$('#q');
 const fine=matchMedia('(pointer:fine)').matches;
 function focusQ(){if(fine)q.focus()}
-function search(text){
+function search(text,limit){
   const n=norm(text).trim();if(!n)return[];
   const d=cleanIsbn(text);
   const words=n.split(/\s+/);
-  return books.filter(b=>(d.length>=3&&b.isbn.includes(d))||words.every(w=>b._n.includes(w))).slice(0,30);
+  return books.filter(b=>(d.length>=3&&b.isbn.includes(d))||words.every(w=>b._n.includes(w))).slice(0,limit==null?30:limit);
 }
 function renderResults(){
   const box=$('#results');const text=q.value.trim();
@@ -393,34 +438,36 @@ $('#cart').addEventListener('click',e=>{
 });
 $('#disc').oninput=$('#discType').onchange=renderCart;
 $('#clearCart').onclick=()=>{if(cart.length&&confirm('Sepet temizlensin mi?')){cart=[];$('#disc').value=0;saveCart()}};
+const PAYL={nakit:'💵 Nakit',kart:'💳 Kart',havale:'🏦 Havale'};
 $('#confirm').onclick=()=>{
   if(!cart.length)return;
   if(cart.some(c=>c.pending)){toast('Listede olmayan ürünün adını ve fiyatını girin');return}
   const t=totals();
   const adet=cart.reduce((s,c)=>s+c.qty,0);
   const hed=cart.filter(c=>c.gift).reduce((s,c)=>s+c.qty,0);
-  if(!confirm(adet+' adet kitap'+(hed?' (+'+hed+' hediye dahil)':'')+', toplam '+money(t.total)+'\nÖdeme: '+(pay==='kart'?'Kart':'Nakit')+'\nSatış onaylansın mı?'))return;
+  $('#paySub').textContent=adet+' kitap'+(hed?' (+'+hed+' hediye dahil)':'');
+  $('#payTotal').textContent=money(t.total);
+  $('#payBox').classList.remove('hidden');
+};
+$('#payCancel').onclick=()=>$('#payBox').classList.add('hidden');
+document.querySelectorAll('.payOpt').forEach(b=>b.onclick=()=>finishSale(b.dataset.pay));
+function finishSale(method){
+  $('#payBox').classList.add('hidden');
+  if(!cart.length)return;
+  const t=totals();
   sales.push({id:Date.now(),t:new Date().toISOString(),items:cart.map(c=>({isbn:c.isbn,name:c.name,author:c.author||'',price:c.price,qty:c.qty,gift:!!c.gift,orig:c.orig})),
-    sub:t.sub,disc:t.d,total:t.total,pay:pay});
+    sub:t.sub,disc:t.d,total:t.total,pay:method});
   LS.set('fuar_sales',sales);
   cart=[];$('#disc').value=0;saveCart();
-  toast('Satış kaydedildi ✓');focusQ();
-};
+  toast('Tahsilat yazıldı: '+PAYL[method]+' '+money(t.total)+' ✓');focusQ();
+}
 
 /* ---------- Satış kayıtları ---------- */
 let period=LS.get('fuar_period','today');
-let pay=LS.get('fuar_pay','nakit');
 const qtyOf=s=>s.items.reduce((k,i)=>k+i.qty,0);
 const giftOf=s=>s.items.filter(i=>i.gift).reduce((k,i)=>k+i.qty,0);
-const payName=s=>s.pay==='kart'?'Kart':s.pay==='nakit'?'Nakit':'';
+const payName=s=>s.pay==='kart'?'Kart':s.pay==='nakit'?'Nakit':s.pay==='havale'?'Havale':'';
 const tab=(el,on,cls)=>{el.className='rounded-xl py-2 font-semibold '+(on?cls:'bg-slate-100 text-slate-600')};
-function renderPay(){
-  tab($('#payNakit'),pay==='nakit','bg-emerald-600 text-white');
-  tab($('#payKart'),pay==='kart','bg-sky-600 text-white');
-}
-$('#payNakit').onclick=()=>{pay='nakit';LS.set('fuar_pay',pay);renderPay()};
-$('#payKart').onclick=()=>{pay='kart';LS.set('fuar_pay',pay);renderPay()};
-renderPay();
 $('#perToday').onclick=()=>{period='today';LS.set('fuar_period',period);renderSales()};
 $('#perAll').onclick=()=>{period='all';LS.set('fuar_period',period);renderSales()};
 function renderSales(){
@@ -429,13 +476,15 @@ function renderSales(){
   const today=new Date().toDateString();
   const list=period==='today'?sales.filter(s=>new Date(s.t).toDateString()===today):sales;
   const sumBy=f=>list.filter(f).reduce((a,s)=>a+s.total,0);
-  const card=(l,v,sub,cls)=>`<div class="bg-white rounded-2xl shadow p-3"><div class="text-xs text-slate-500">${l}</div><div class="text-xl font-bold ${cls}">${v}</div><div class="text-xs text-slate-500">${sub}</div></div>`;
+  const card=(l,v,sub,cls,span)=>`<div class="bg-white rounded-2xl shadow p-3${span?' col-span-2':''}"><div class="text-xs text-slate-500">${l}</div><div class="text-xl font-bold ${cls}">${v}</div><div class="text-xs text-slate-500">${sub}</div></div>`;
   const q=list.reduce((a,s)=>a+qtyOf(s),0),g=list.reduce((a,s)=>a+giftOf(s),0);
+  const by=m=>list.filter(s=>s.pay===m);
   $('#salesSummary').innerHTML=
-    card('Ciro',money(sumBy(()=>true)),list.length+' satış · '+q+' kitap','text-indigo-700')+
+    card('Ciro',money(sumBy(()=>true)),list.length+' satış · '+q+' kitap','text-indigo-700',true)+
     card('İndirim',money(list.reduce((a,s)=>a+(s.disc||0),0)),g+' hediye kitap','text-pink-700')+
-    card('💵 Nakit',money(sumBy(s=>s.pay==='nakit')),list.filter(s=>s.pay==='nakit').length+' satış','text-emerald-700')+
-    card('💳 Kart',money(sumBy(s=>s.pay==='kart')),list.filter(s=>s.pay==='kart').length+' satış','text-sky-700');
+    card('💵 Nakit',money(sumBy(s=>s.pay==='nakit')),by('nakit').length+' satış','text-emerald-700')+
+    card('💳 Kart',money(sumBy(s=>s.pay==='kart')),by('kart').length+' satış','text-sky-700')+
+    card('🏦 Havale',money(sumBy(s=>s.pay==='havale')),by('havale').length+' satış','text-violet-700');
   const m={};
   list.forEach(s=>s.items.forEach(i=>{
     const k=(i.isbn||'')+'|'+i.name,o=m[k]||(m[k]={name:i.name,qty:0,gift:0,rev:0});
@@ -450,7 +499,7 @@ function renderSales(){
     const d=new Date(s.t);
     return `<div class="bg-white rounded-2xl shadow p-3">
       <div class="flex items-center justify-between">
-        <span class="text-xs text-slate-500">${d.toLocaleDateString('tr-TR')} ${d.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}${s.pay?' · '+(s.pay==='kart'?'💳 Kart':'💵 Nakit'):''}</span>
+        <span class="text-xs text-slate-500">${d.toLocaleDateString('tr-TR')} ${d.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}${s.pay?' · '+(PAYL[s.pay]||''):''}</span>
         <button data-id="${s.id}" class="delSale text-xs text-red-600 font-semibold">İptal et</button></div>
       <div class="text-sm mt-1">${s.items.map(i=>esc(i.name)+' ×'+i.qty+(i.gift?' 🎁':'')).join('<br>')}</div>
       <div class="text-right font-bold mt-1">${money(s.total)}${s.disc>0?' <span class="text-xs font-normal text-slate-500">(indirim '+money(s.disc)+')</span>':''}</div></div>`}).join('')
@@ -502,7 +551,7 @@ $('#expXlsx').onclick=()=>{
   saveFile('fuar-satis-'+stamp()+'.xlsx',new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
 };
 $('#bkSave').onclick=()=>{
-  const data={app:'fuar-satis',version:'1.5.0',exported:new Date().toISOString(),
+  const data={app:'fuar-satis',version:'1.7.0',exported:new Date().toISOString(),
     books:books.map(b=>({isbn:b.isbn,name:b.name,author:b.author,price:b.price})),sales:sales};
   saveFile('fuar-yedek-'+stamp()+'.json',JSON.stringify(data),'application/json');
 };
@@ -825,6 +874,62 @@ $('#coverFile').onchange=async e=>{
       :'Kapak okunamadı'+(c?' ('+c+')':'')+'.';
     coverShow(msg,'',{again:c!=='not_granted',manual:true});
   }
+};
+
+/* ---------- Ürünler: liste görüntüleme, düzeltme, ekleme ---------- */
+let plLimit=60,plBad=false,pbRef=null;
+function renderProducts(){
+  const text=$('#plQ').value.trim();
+  let list=text?search(text,Infinity):books.slice();
+  const badN=books.filter(b=>b.isbn.length<8).length;
+  if(plBad)list=list.filter(b=>b.isbn.length<8);
+  list.sort((a,b)=>a.name.localeCompare(b.name,'tr'));
+  const bb=$('#plBad');
+  bb.textContent='⚠ Barkodu eksik ('+badN+')';
+  bb.className='rounded-xl px-3 py-3 font-semibold text-sm '+(plBad?'bg-amber-500 text-white':'bg-amber-100 text-amber-800');
+  $('#plInfo').textContent=list.length+' ürün'+(list.length!==books.length?' (toplam '+books.length+')':'')+' · düzeltmek için dokunun';
+  const shown=list.slice(0,plLimit);
+  $('#plList').innerHTML=shown.length?shown.map(b=>`<button data-k="${esc(b._k)}" class="pl w-full text-left bg-white rounded-2xl shadow p-3 flex items-center gap-3">
+    <div class="flex-1 min-w-0"><div class="font-semibold">${esc(b.name)}</div>
+      <div class="text-xs text-slate-500">${esc(b.author)}${b.author&&b.isbn?' · ':''}${esc(b.isbn)}${b.isbn.length<8?' <span class="text-amber-600">⚠ barkod eksik</span>':''}</div></div>
+    <div class="font-bold text-indigo-700 whitespace-nowrap">${money(b.price)}</div></button>`).join('')
+    :'<p class="text-center text-slate-400 py-6">'+(books.length?'Sonuç yok.':'Liste boş. Ayarlar sekmesinden dosya yükleyin veya Yeni ürün ekleyin.')+'</p>';
+  const more=$('#plMore');
+  more.classList.toggle('hidden',list.length<=plLimit);
+  more.textContent='Daha fazla göster ('+(list.length-plLimit)+' ürün daha)';
+}
+$('#plQ').addEventListener('input',()=>{plLimit=60;renderProducts()});
+$('#plMore').onclick=()=>{plLimit+=60;renderProducts()};
+$('#plBad').onclick=()=>{plBad=!plBad;plLimit=60;renderProducts()};
+$('#plAdd').onclick=()=>openProduct(null);
+$('#plList').addEventListener('click',e=>{
+  const b=e.target.closest('.pl');if(b)openProduct(byKey[b.dataset.k]);
+});
+function openProduct(b){
+  pbRef=b||null;
+  $('#pbTitle').textContent=b?'Ürünü düzenle':'Yeni ürün ekle';
+  $('#pbName').value=b?b.name:'';$('#pbAuthor').value=b?b.author:'';
+  $('#pbPrice').value=b?String(b.price).replace('.',','):'';$('#pbIsbn').value=b?b.isbn:'';
+  $('#pbDel').classList.toggle('hidden',!b);
+  $('#productBox').classList.remove('hidden');
+}
+function closeProduct(){$('#productBox').classList.add('hidden');pbRef=null}
+$('#pbCancel').onclick=closeProduct;
+$('#pbOk').onclick=()=>{
+  const name=$('#pbName').value.trim(),ps=$('#pbPrice').value.trim();
+  if(!name){toast('Kitap adı yazın');return}
+  if(!ps){toast('Fiyat yazın');return}
+  const nb={isbn:cleanIsbn($('#pbIsbn').value),name,author:$('#pbAuthor').value.trim(),price:parsePrice(ps)};
+  const k=keyOf(nb),clash=books.find(x=>x!==pbRef&&keyOf(x)===k);
+  if(clash){toast('Bu barkod/ad zaten listede: '+clash.name);return}
+  if(pbRef)Object.assign(pbRef,nb);else books.push(nb);
+  saveBooks();rebuild();renderProducts();closeProduct();
+  toast('Kaydedildi: '+name);
+};
+$('#pbDel').onclick=()=>{
+  if(!pbRef||!confirm('"'+pbRef.name+'" listeden silinsin mi?'))return;
+  const r=pbRef;books=books.filter(x=>x!==r);
+  saveBooks();rebuild();renderProducts();closeProduct();toast('Silindi');
 };
 
 /* Barkod okuyucu odağı: boş bir yere dokununca arama kutusuna dön */
