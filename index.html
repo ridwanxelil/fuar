@@ -2,8 +2,8 @@
 <!--
 RX-PROGRESS v1
 Proje: Fuar Satış
-Klasor: fuar-satis | Tur: tek dosya HTML (Tailwind CSS CDN, saf JavaScript) | Surum: 1.7.0
-Tamamlanan: 1. Temel: liste yükleme + eşleştirme, arama, barkod okuyucu, sepet, indirim, onay, satış kayıtları — v1.0.0 — 2026-11-21; 2. Kamerayla barkod tarama + örnek veri (datanu.xlsx) — v1.1.0 — 2026-11-21; 3. Ödeme türü (nakit/kart), rapor (Bugün/Tümü ciro, nakit/kart, indirim, hediye, en çok satanlar), CSV/Excel dışa aktarma, yedek al / yedekten yükle — v1.4.0 — 2026-11-21; 4. Kapaktan bul (📖): kapak fotoğrafından Claude ile ad/yazar/ISBN okuma + listeyle benzerlik eşleştirme — v1.5.0 — 2026-11-21; 5. Tahsilat: satışı onayla → Nakit/Kart/Havale seçimi, tahsilat anında yazılır — v1.6.0 — 2026-11-21; 6. Ürünler sekmesi: liste görüntüleme/arama, düzeltme, yeni ürün ekleme, silme, "barkodu eksik" filtresi — v1.7.0 — 2026-11-21
+Klasor: fuar-satis | Tur: tek dosya HTML (Tailwind CSS CDN, saf JavaScript) | Surum: 1.7.1
+Tamamlanan: 1. Temel: liste yükleme + eşleştirme, arama, barkod okuyucu, sepet, indirim, onay, satış kayıtları — v1.0.0 — 2026-11-21; 2. Kamerayla barkod tarama + örnek veri (datanu.xlsx) — v1.1.0 — 2026-11-21; 3. Ödeme türü (nakit/kart), rapor (Bugün/Tümü ciro, nakit/kart, indirim, hediye, en çok satanlar), CSV/Excel dışa aktarma, yedek al / yedekten yükle — v1.4.0 — 2026-11-21; 4. Kapaktan bul (📖): kapak fotoğrafından Claude ile ad/yazar/ISBN okuma + listeyle benzerlik eşleştirme — v1.5.0 — 2026-11-21; 5. Tahsilat: satışı onayla → Nakit/Kart/Havale seçimi, tahsilat anında yazılır — v1.6.0 — 2026-11-21; 6. Ürünler sekmesi: liste görüntüleme/arama, düzeltme, yeni ürün ekleme, silme, "barkodu eksik" filtresi — v1.7.1 — 2026-11-21
 Siradaki: 7. (isteğe bağlı fikirler) Satış fişi/yazdırma, kitap listesinde fiyat düzenleme, stok sayımı, yayınevi alanı
 Kalan: yok
 Kararlar: Veri dosyası CSV (; , veya sekme ayraçlı, UTF-8 / Windows-1254) ya da Excel (.xlsx/.xls, SheetJS CDN) olabilir.; Sütun eşleştirme ekranı vardır; seçim başlık adına göre hatırlanır.; Tek arama kutusu hem barkod okuyucu (klavye gibi çalışan, Enter ile biten) hem arama içindir.; Listede olmayan barkod: elle ad ve fiyat girilerek sepete eklenebilir (listeye eklenmez).; Tailwind CDN ilk açılışta intern
@@ -14,7 +14,7 @@ Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Fuar Satış v1.7.0</title>
+<title>Fuar Satış v1.7.1</title>
 <script src="https://cdn.tailwindcss.com/3.4.17"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
@@ -27,7 +27,7 @@ Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
 
 <header class="bg-indigo-700 text-white px-4 py-3 sticky top-0 z-20 shadow">
   <div class="max-w-3xl mx-auto flex items-center justify-between">
-    <h1 class="text-lg font-bold">📚 Fuar Satış <span class="text-xs font-normal opacity-80">v1.7.0</span></h1>
+    <h1 class="text-lg font-bold">📚 Fuar Satış <span class="text-xs font-normal opacity-80">v1.7.1</span></h1>
     <span id="hdrInfo" class="text-xs opacity-80"></span>
   </div>
 </header>
@@ -253,10 +253,27 @@ const LS={
 const money=n=>(Number(n)||0).toLocaleString('tr-TR',{style:'currency',currency:'TRY'});
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const norm=s=>String(s||'').toLocaleLowerCase('tr').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/ı/g,'i');
+/* Barkod temizleme: tire/boşluk/nokta yok sayılır, rakamlar bitişik alınır.
+   İçinde yazı olan (ISBN-10 sonundaki X hariç) barkodlar geçersiz sayılır -> '' (ürün isimle aranır). */
 const cleanIsbn=v=>{
   if(typeof v==='number')v=Math.round(v).toString();
-  return String(v==null?'':v).replace(/[^0-9Xx]/g,'').toUpperCase();
+  let s=String(v==null?'':v).trim().replace(/\.0+$/,'').replace(/[\s\-\u2010-\u2015\u2212_.]/g,'');
+  if(/^\d+$/.test(s)||/^\d{9}[Xx]$/.test(s))return s.toUpperCase();
+  return '';
 };
+/* Standart-bağımsız eşleştirme anahtarı (kontrol hanesi yok sayılır, hatalı olsa da eşleşir):
+   ISBN-10 -> 978+ilk 9 hane | EAN-13/ISBN-13 -> ilk 12 hane | 12 hane (978/979 ile başlıyorsa son hanesi eksik EAN, değilse UPC-A)
+   14 hane (GTIN-14/ITF-14) -> ilk (paket) hane atılıp EAN-13 çekirdeği | 8 hane EAN-8 */
+function coreKey(d){
+  if(!d)return '';
+  if(d.length===10)return '978'+d.slice(0,9);
+  if(d.length===13)return d.slice(0,12);
+  if(d.length===12)return /^97[89]/.test(d)?d:'0'+d.slice(0,11);
+  if(d.length===14)return d.slice(1,13);
+  if(d.length===8)return 'e'+d.slice(0,7);
+  return '';
+}
+function findByCode(raw){const c=coreKey(cleanIsbn(raw));return c?(byIsbn[c]||null):null}
 const parsePrice=v=>{
   if(typeof v==='number')return v;
   let s=String(v==null?'':v).replace(/[^\d.,]/g,'');
@@ -273,10 +290,10 @@ let books=LS.get('fuar_books',[]);
 let cart=LS.get('fuar_cart',[]);
 let sales=LS.get('fuar_sales',[]);
 let byIsbn={},byKey={};
-const keyOf=b=>b.isbn.length>=8?b.isbn:b.isbn+'|'+norm(b.name);
+const keyOf=b=>coreKey(cleanIsbn(b.isbn))?cleanIsbn(b.isbn):cleanIsbn(b.isbn)+'|'+norm(b.name);
 function rebuild(){
   byIsbn={};byKey={};
-  books.forEach(b=>{b._k=keyOf(b);b._g=null;b._gn=null;b._n=norm(b.name+' '+b.author);byKey[b._k]=b;if(b.isbn.length>=8)byIsbn[b.isbn]=b});
+  books.forEach(b=>{b._k=keyOf(b);b._g=null;b._gn=null;b._n=norm(b.name+' '+b.author);byKey[b._k]=b;const c=coreKey(cleanIsbn(b.isbn));if(c)byIsbn[c]=b});
   $('#hdrInfo').textContent=books.length+' kitap';
 }
 rebuild();
@@ -314,7 +331,10 @@ function search(text,limit){
   const n=norm(text).trim();if(!n)return[];
   const d=cleanIsbn(text);
   const words=n.split(/\s+/);
-  return books.filter(b=>(d.length>=3&&b.isbn.includes(d))||words.every(w=>b._n.includes(w))).slice(0,limit==null?30:limit);
+  const ex=d.length>=8?findByCode(text):null;
+  const r=books.filter(b=>b!==ex&&((d.length>=3&&b.isbn.includes(d))||words.every(w=>b._n.includes(w))));
+  if(ex)r.unshift(ex);
+  return r.slice(0,limit==null?30:limit);
 }
 function renderResults(){
   const box=$('#results');const text=q.value.trim();
@@ -338,15 +358,16 @@ q.addEventListener('keydown',e=>{
   e.preventDefault();
   const raw=q.value.trim();if(!raw)return;
   const d=cleanIsbn(raw);
-  if(d.length>=8&&byIsbn[d]){addByIsbn(d);clearQ();return}
-  if(/^\d{8,14}$/.test(raw.replace(/\s|-/g,''))){unknown(d);clearQ();return}
+  const fb=findByCode(raw);
+  if(fb){addBook(fb);clearQ();return}
+  if(d.length>=8){unknown(d);clearQ();return}
   const r=search(raw);
   if(r.length===1){addBook(r[0]);clearQ()}
 });
 function unknown(code){openManual({isbn:code})}
 function prefill(){
   const t=q.value.trim();
-  return /^[\d\-\s]{8,}$/.test(t)?{isbn:cleanIsbn(t)}:{name:t};
+  return cleanIsbn(t).length>=8?{isbn:cleanIsbn(t)}:{name:t};
 }
 function openManual(pre){
   pre=pre||{};
@@ -381,7 +402,7 @@ $('#manOk').onclick=()=>{
 
 /* ---------- Sepet ---------- */
 function addBook(b){if(b)return addItem({key:b._k,isbn:b.isbn,name:b.name,author:b.author,price:b.price})}
-function addByIsbn(i){addBook(byIsbn[i])}
+function addByIsbn(i){addBook(findByCode(i))}
 function addItem(it){
   const f=cart.find(c=>(c.key||c.isbn)===(it.key||it.isbn)&&c.price===it.price&&!!c.gift===!!it.gift);
   let line=f;
@@ -551,7 +572,7 @@ $('#expXlsx').onclick=()=>{
   saveFile('fuar-satis-'+stamp()+'.xlsx',new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
 };
 $('#bkSave').onclick=()=>{
-  const data={app:'fuar-satis',version:'1.7.0',exported:new Date().toISOString(),
+  const data={app:'fuar-satis',version:'1.7.1',exported:new Date().toISOString(),
     books:books.map(b=>({isbn:b.isbn,name:b.name,author:b.author,price:b.price})),sales:sales};
   saveFile('fuar-yedek-'+stamp()+'.json',JSON.stringify(data),'application/json');
 };
@@ -654,7 +675,7 @@ $('#doImport').onclick=()=>{
   let added=0,upd=0,skip=0;
   raw.slice(1).forEach(r=>{
     const isbn=cleanIsbn(r[ci]),name=String(r[cn]==null?'':r[cn]).trim();
-    if(!isbn||!name){skip++;return}
+    if(!name){skip++;return}
     const b={isbn,name,author:ca>=0?String(r[ca]==null?'':r[ca]).trim():'',price:parsePrice(r[cp])};
     const k=keyOf(b);
     if(map[k])upd++;else added++;
@@ -767,7 +788,7 @@ function onCode(code){
   const now=Date.now();
   if(d===lastCode&&now-lastT<2500){lastT=now;return}
   lastCode=d;lastT=now;beep();
-  const b=byIsbn[d];
+  const b=findByCode(d);
   if(b){addBook(b);$('#camMsg').textContent='✓ '+b.name;camInfo()}
   else{addItem({key:'x:'+d,isbn:d,name:'Bilinmeyen barkod '+d,author:'',price:0,manual:true,pending:true});$('#camMsg').textContent='⚠ Listede yok, sepete eklendi: '+d;camInfo()}
 }
@@ -854,7 +875,7 @@ $('#coverFile').onchange=async e=>{
     if(coverCtl!==ctl)return;
     coverCtl=null;
     const t=String((r&&r.title)||'').trim(),a=String((r&&r.author)||'').trim(),isb=cleanIsbn((r&&r.isbn)||'');
-    if(isb.length>=8&&byIsbn[isb]){addBook(byIsbn[isb]);closeCover();return}
+    const fbk=findByCode(isb);if(fbk){addBook(fbk);closeCover();return}
     if(!t&&!a){coverShow('Kapakta ad okunamadı. Kapağı daha yakından, düz ve net çekin.','',{again:true,manual:true});return}
     const rk=rankBooks(t,a);
     const read='Okunan: <b>'+esc(t||'—')+'</b>'+(a?' · '+esc(a):'');
