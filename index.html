@@ -2,9 +2,9 @@
 <!--
 RX-PROGRESS v1
 Proje: Fuar Satış
-Klasor: fuar-satis | Tur: tek dosya HTML (Tailwind CSS CDN, saf JavaScript) | Surum: 1.3.0
-Tamamlanan: 1. Temel: liste yükleme + eşleştirme, arama, barkod okuyucu, sepet, indirim, onay, satış kayıtları — v1.0.0 — 2026-11-21; 2. Kamerayla barkod tarama + örnek veri (datanu.xlsx) — v1.1.0 — 2026-11-21
-Siradaki: 3. Ödeme türü (nakit/kart), rapor (günlük ciro, en çok satanlar), CSV/Excel dışa aktarma, yedek al / yedekten yükle
+Klasor: fuar-satis | Tur: tek dosya HTML (Tailwind CSS CDN, saf JavaScript) | Surum: 1.4.0
+Tamamlanan: 1. Temel: liste yükleme + eşleştirme, arama, barkod okuyucu, sepet, indirim, onay, satış kayıtları — v1.0.0 — 2026-11-21; 2. Kamerayla barkod tarama + örnek veri (datanu.xlsx) — v1.1.0 — 2026-11-21; 3. Ödeme türü (nakit/kart), rapor (Bugün/Tümü ciro, nakit/kart, indirim, hediye, en çok satanlar), CSV/Excel dışa aktarma, yedek al / yedekten yükle — v1.4.0 — 2026-11-21
+Siradaki: 4. (isteğe bağlı fikirler) Satış fişi/yazdırma, kitap listesinde fiyat düzenleme, stok sayımı, yayınevi alanı
 Kalan: yok
 Kararlar: Veri dosyası CSV (; , veya sekme ayraçlı, UTF-8 / Windows-1254) ya da Excel (.xlsx/.xls, SheetJS CDN) olabilir.; Sütun eşleştirme ekranı vardır; seçim başlık adına göre hatırlanır.; Tek arama kutusu hem barkod okuyucu (klavye gibi çalışan, Enter ile biten) hem arama içindir.; Listede olmayan barkod: elle ad ve fiyat girilerek sepete eklenebilir (listeye eklenmez).; Tailwind CDN ilk açılışta intern
 Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
@@ -14,7 +14,7 @@ Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Fuar Satış</title>
+<title>Fuar Satış v1.4.0</title>
 <script src="https://cdn.tailwindcss.com/3.4.17"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
@@ -27,12 +27,12 @@ Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
 
 <header class="bg-indigo-700 text-white px-4 py-3 sticky top-0 z-20 shadow">
   <div class="max-w-3xl mx-auto flex items-center justify-between">
-    <h1 class="text-lg font-bold">📚 Fuar Satış</h1>
+    <h1 class="text-lg font-bold">📚 Fuar Satış <span class="text-xs font-normal opacity-80">v1.4.0</span></h1>
     <span id="hdrInfo" class="text-xs opacity-80"></span>
   </div>
 </header>
 
-<main class="max-w-3xl mx-auto p-3 pb-44">
+<main class="max-w-3xl mx-auto p-3 pb-56">
 
   <!-- SATIŞ -->
   <section id="tab-sale">
@@ -53,7 +53,17 @@ Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
 
   <!-- SATIŞLAR -->
   <section id="tab-sales" class="hidden">
+    <div class="grid grid-cols-2 gap-2 mb-3">
+      <button id="perToday" class="rounded-xl py-2 font-semibold">Bugün</button>
+      <button id="perAll" class="rounded-xl py-2 font-semibold">Tümü</button>
+    </div>
     <div id="salesSummary" class="grid grid-cols-2 gap-2 mb-3"></div>
+    <div id="topList" class="bg-white rounded-2xl shadow p-3 mb-3 hidden"></div>
+    <div class="grid grid-cols-2 gap-2 mb-3">
+      <button id="expXlsx" class="bg-emerald-600 text-white rounded-xl py-3 font-semibold text-sm">⬇️ Excel (.xlsx)</button>
+      <button id="expCsv" class="bg-slate-700 text-white rounded-xl py-3 font-semibold text-sm">⬇️ CSV</button>
+    </div>
+    <h2 class="mb-2 px-1 text-sm font-semibold text-slate-500 uppercase">Satış kayıtları</h2>
     <div id="salesList" class="space-y-2"></div>
   </section>
 
@@ -86,6 +96,15 @@ Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
     </div>
 
     <div class="bg-white rounded-2xl shadow p-4">
+      <h2 class="font-bold mb-1">Yedek</h2>
+      <p class="text-xs text-slate-500 mb-3">Kitap listesi ve satış kayıtları bu tarayıcıda saklanır. Tarayıcı verisi silinirse kaybolur; fuarda arada yedek alın.</p>
+      <div class="flex gap-2">
+        <button id="bkSave" class="flex-1 bg-indigo-600 text-white rounded-xl py-3 font-semibold text-sm">Yedek al (.json)</button>
+        <label class="flex-1 text-center bg-slate-200 rounded-xl py-3 font-semibold text-sm cursor-pointer">Yedekten yükle<input id="bkLoad" type="file" accept=".json,application/json" class="hidden"></label>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow p-4">
       <h2 class="font-bold mb-2">Bakım</h2>
       <button id="clearBooks" class="bg-red-50 text-red-700 rounded-xl px-4 py-3 font-semibold">Kitap listesini temizle</button>
       <p class="text-xs text-slate-400 mt-2">Satış kayıtlarına dokunmaz.</p>
@@ -96,6 +115,10 @@ Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
 <!-- Sepet çubuğu -->
 <div id="cartBar" class="hidden fixed left-0 right-0 bottom-16 z-20 px-3">
   <div class="max-w-3xl mx-auto bg-white rounded-2xl shadow-2xl border p-3">
+    <div class="grid grid-cols-2 gap-2 mb-2">
+      <button id="payNakit" class="rounded-xl py-2 font-semibold">💵 Nakit</button>
+      <button id="payKart" class="rounded-xl py-2 font-semibold">💳 Kart</button>
+    </div>
     <div class="flex items-center gap-2 mb-2 text-sm">
       <span class="text-slate-500">İndirim</span>
       <input id="disc" type="number" min="0" step="any" inputmode="decimal" class="w-20 border rounded-lg p-1.5 text-right" value="0">
@@ -361,33 +384,128 @@ $('#confirm').onclick=()=>{
   const t=totals();
   const adet=cart.reduce((s,c)=>s+c.qty,0);
   const hed=cart.filter(c=>c.gift).reduce((s,c)=>s+c.qty,0);
-  if(!confirm(adet+' adet kitap'+(hed?' (+'+hed+' hediye dahil)':'')+', toplam '+money(t.total)+'\nSatış onaylansın mı?'))return;
+  if(!confirm(adet+' adet kitap'+(hed?' (+'+hed+' hediye dahil)':'')+', toplam '+money(t.total)+'\nÖdeme: '+(pay==='kart'?'Kart':'Nakit')+'\nSatış onaylansın mı?'))return;
   sales.push({id:Date.now(),t:new Date().toISOString(),items:cart.map(c=>({isbn:c.isbn,name:c.name,author:c.author||'',price:c.price,qty:c.qty,gift:!!c.gift,orig:c.orig})),
-    sub:t.sub,disc:t.d,total:t.total});
+    sub:t.sub,disc:t.d,total:t.total,pay:pay});
   LS.set('fuar_sales',sales);
   cart=[];$('#disc').value=0;saveCart();
   toast('Satış kaydedildi ✓');focusQ();
 };
 
 /* ---------- Satış kayıtları ---------- */
+let period=LS.get('fuar_period','today');
+let pay=LS.get('fuar_pay','nakit');
+const qtyOf=s=>s.items.reduce((k,i)=>k+i.qty,0);
+const giftOf=s=>s.items.filter(i=>i.gift).reduce((k,i)=>k+i.qty,0);
+const payName=s=>s.pay==='kart'?'Kart':s.pay==='nakit'?'Nakit':'';
+const tab=(el,on,cls)=>{el.className='rounded-xl py-2 font-semibold '+(on?cls:'bg-slate-100 text-slate-600')};
+function renderPay(){
+  tab($('#payNakit'),pay==='nakit','bg-emerald-600 text-white');
+  tab($('#payKart'),pay==='kart','bg-sky-600 text-white');
+}
+$('#payNakit').onclick=()=>{pay='nakit';LS.set('fuar_pay',pay);renderPay()};
+$('#payKart').onclick=()=>{pay='kart';LS.set('fuar_pay',pay);renderPay()};
+renderPay();
+$('#perToday').onclick=()=>{period='today';LS.set('fuar_period',period);renderSales()};
+$('#perAll').onclick=()=>{period='all';LS.set('fuar_period',period);renderSales()};
 function renderSales(){
+  tab($('#perToday'),period==='today','bg-indigo-600 text-white');
+  tab($('#perAll'),period==='all','bg-indigo-600 text-white');
   const today=new Date().toDateString();
-  const td=sales.filter(s=>new Date(s.t).toDateString()===today);
-  const cnt=a=>a.reduce((s,x)=>s+x.items.reduce((k,i)=>k+i.qty,0),0);
-  const sum=a=>a.reduce((s,x)=>s+x.total,0);
-  const gf=a=>{const g=a.reduce((s,x)=>s+x.items.filter(i=>i.gift).reduce((k,i)=>k+i.qty,0),0);return g?' · '+g+' hediye':''};
-  const card=(l,v,s)=>`<div class="bg-white rounded-2xl shadow p-3"><div class="text-xs text-slate-500">${l}</div><div class="text-xl font-bold text-indigo-700">${v}</div><div class="text-xs text-slate-500">${s}</div></div>`;
-  $('#salesSummary').innerHTML=card('Bugün',money(sum(td)),td.length+' satış · '+cnt(td)+' kitap'+gf(td))+card('Toplam',money(sum(sales)),sales.length+' satış · '+cnt(sales)+' kitap'+gf(sales));
-  $('#salesList').innerHTML=sales.length?sales.slice().reverse().map(s=>{
+  const list=period==='today'?sales.filter(s=>new Date(s.t).toDateString()===today):sales;
+  const sumBy=f=>list.filter(f).reduce((a,s)=>a+s.total,0);
+  const card=(l,v,sub,cls)=>`<div class="bg-white rounded-2xl shadow p-3"><div class="text-xs text-slate-500">${l}</div><div class="text-xl font-bold ${cls}">${v}</div><div class="text-xs text-slate-500">${sub}</div></div>`;
+  const q=list.reduce((a,s)=>a+qtyOf(s),0),g=list.reduce((a,s)=>a+giftOf(s),0);
+  $('#salesSummary').innerHTML=
+    card('Ciro',money(sumBy(()=>true)),list.length+' satış · '+q+' kitap','text-indigo-700')+
+    card('İndirim',money(list.reduce((a,s)=>a+(s.disc||0),0)),g+' hediye kitap','text-pink-700')+
+    card('💵 Nakit',money(sumBy(s=>s.pay==='nakit')),list.filter(s=>s.pay==='nakit').length+' satış','text-emerald-700')+
+    card('💳 Kart',money(sumBy(s=>s.pay==='kart')),list.filter(s=>s.pay==='kart').length+' satış','text-sky-700');
+  const m={};
+  list.forEach(s=>s.items.forEach(i=>{
+    const k=(i.isbn||'')+'|'+i.name,o=m[k]||(m[k]={name:i.name,qty:0,gift:0,rev:0});
+    o.qty+=i.qty;if(i.gift)o.gift+=i.qty;o.rev+=i.price*i.qty;
+  }));
+  const top=Object.values(m).sort((a,b)=>b.qty-a.qty||b.rev-a.rev).slice(0,10);
+  const tl=$('#topList');
+  tl.classList.toggle('hidden',!top.length);
+  tl.innerHTML='<h3 class="text-sm font-semibold text-slate-500 uppercase mb-1">En çok satanlar</h3>'+top.map((o,n)=>
+    `<div class="flex items-center gap-2 text-sm py-1.5 border-b last:border-0"><span class="w-5 text-slate-400">${n+1}</span><span class="flex-1 min-w-0 truncate">${esc(o.name)}</span><span class="font-semibold whitespace-nowrap">${o.qty} adet${o.gift?' <span class="text-pink-600 text-xs">('+o.gift+' hediye)</span>':''}</span><span class="w-20 text-right text-slate-500">${money(o.rev)}</span></div>`).join('');
+  $('#salesList').innerHTML=list.length?list.slice().reverse().map(s=>{
     const d=new Date(s.t);
     return `<div class="bg-white rounded-2xl shadow p-3">
       <div class="flex items-center justify-between">
-        <span class="text-xs text-slate-500">${d.toLocaleDateString('tr-TR')} ${d.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}</span>
+        <span class="text-xs text-slate-500">${d.toLocaleDateString('tr-TR')} ${d.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}${s.pay?' · '+(s.pay==='kart'?'💳 Kart':'💵 Nakit'):''}</span>
         <button data-id="${s.id}" class="delSale text-xs text-red-600 font-semibold">İptal et</button></div>
       <div class="text-sm mt-1">${s.items.map(i=>esc(i.name)+' ×'+i.qty+(i.gift?' 🎁':'')).join('<br>')}</div>
       <div class="text-right font-bold mt-1">${money(s.total)}${s.disc>0?' <span class="text-xs font-normal text-slate-500">(indirim '+money(s.disc)+')</span>':''}</div></div>`}).join('')
-    :'<p class="text-center text-slate-400 py-6">Henüz satış yok.</p>';
+    :'<p class="text-center text-slate-400 py-6">Bu dönemde satış yok.</p>';
 }
+
+/* ---------- Dışa aktarma ve yedek ---------- */
+async function saveFile(name,data,mime){
+  try{
+    if(window.claude&&claude.use){
+      const dl=await claude.use('downloads');
+      if(dl){await dl.save({filename:name,data});toast('Kaydedildi: '+name);return}
+    }
+  }catch(e){if(e&&e.code==='declined')return}
+  const blob=data instanceof Blob?data:new Blob([data],{type:mime||'application/octet-stream'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download=name;
+  document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500);
+  toast('İndiriliyor: '+name);
+}
+function stamp(){const d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+'-'+String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0')}
+const dStr=t=>new Date(t).toLocaleDateString('tr-TR'),tStr=t=>new Date(t).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});
+const HEAD=['Tarih','Saat','Satış No','Ödeme','ISBN','Kitap','Yazar','Adet','Birim Fiyat','Hediye','Tutar'];
+function saleRows(){
+  const rows=[];
+  sales.forEach(s=>s.items.forEach(i=>rows.push([dStr(s.t),tStr(s.t),s.id,payName(s),i.isbn||'',i.name,i.author||'',i.qty,i.price,i.gift?'Evet':'',i.price*i.qty])));
+  return rows;
+}
+$('#expCsv').onclick=()=>{
+  if(!sales.length){toast('Kayıtlı satış yok');return}
+  const cell=v=>{
+    if(typeof v==='number')return String(v).replace('.',',');
+    v=String(v==null?'':v);
+    return /[;"\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;
+  };
+  const csv='\uFEFF'+[HEAD].concat(saleRows()).map(r=>r.map(cell).join(';')).join('\r\n');
+  saveFile('fuar-satis-'+stamp()+'.csv',csv,'text/csv;charset=utf-8');
+};
+$('#expXlsx').onclick=()=>{
+  if(!sales.length){toast('Kayıtlı satış yok');return}
+  if(typeof XLSX==='undefined'){toast('Excel kütüphanesi yüklenemedi, CSV kullanın');return}
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([HEAD].concat(saleRows())),'Kalemler');
+  const sum=[['Tarih','Saat','Satış No','Ödeme','Adet','Hediye','Ara toplam','İndirim','Toplam']]
+    .concat(sales.map(s=>[dStr(s.t),tStr(s.t),s.id,payName(s),qtyOf(s),giftOf(s),s.sub,s.disc||0,s.total]));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sum),'Satışlar');
+  const buf=XLSX.write(wb,{type:'array',bookType:'xlsx'});
+  saveFile('fuar-satis-'+stamp()+'.xlsx',new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+};
+$('#bkSave').onclick=()=>{
+  const data={app:'fuar-satis',version:'1.4.0',exported:new Date().toISOString(),
+    books:books.map(b=>({isbn:b.isbn,name:b.name,author:b.author,price:b.price})),sales:sales};
+  saveFile('fuar-yedek-'+stamp()+'.json',JSON.stringify(data),'application/json');
+};
+$('#bkLoad').onchange=e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      const d=JSON.parse(rd.result);
+      if(d.app!=='fuar-satis'||!Array.isArray(d.books)||!Array.isArray(d.sales))throw new Error('format');
+      if(!confirm('Mevcut kitap listesi ve satışlar silinip yedektekiler yüklensin mi?\n('+d.books.length+' kitap, '+d.sales.length+' satış)'))return;
+      books=d.books;sales=d.sales;
+      saveBooks();LS.set('fuar_sales',sales);rebuild();renderStats();
+      toast('Yedek yüklendi');
+    }catch(err){toast('Yedek dosyası geçersiz')}
+  };
+  rd.readAsText(f);
+};
 $('#salesList').addEventListener('click',e=>{
   const b=e.target.closest('.delSale');if(!b)return;
   if(!confirm('Bu satış kaydı silinsin mi?'))return;
