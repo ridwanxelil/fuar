@@ -2,9 +2,9 @@
 <!--
 RX-PROGRESS v1
 Proje: Fuar Satış
-Klasor: fuar-satis | Tur: tek dosya HTML (Tailwind CSS CDN, saf JavaScript) | Surum: 1.4.0
-Tamamlanan: 1. Temel: liste yükleme + eşleştirme, arama, barkod okuyucu, sepet, indirim, onay, satış kayıtları — v1.0.0 — 2026-11-21; 2. Kamerayla barkod tarama + örnek veri (datanu.xlsx) — v1.1.0 — 2026-11-21; 3. Ödeme türü (nakit/kart), rapor (Bugün/Tümü ciro, nakit/kart, indirim, hediye, en çok satanlar), CSV/Excel dışa aktarma, yedek al / yedekten yükle — v1.4.0 — 2026-11-21
-Siradaki: 4. (isteğe bağlı fikirler) Satış fişi/yazdırma, kitap listesinde fiyat düzenleme, stok sayımı, yayınevi alanı
+Klasor: fuar-satis | Tur: tek dosya HTML (Tailwind CSS CDN, saf JavaScript) | Surum: 1.5.0
+Tamamlanan: 1. Temel: liste yükleme + eşleştirme, arama, barkod okuyucu, sepet, indirim, onay, satış kayıtları — v1.0.0 — 2026-11-21; 2. Kamerayla barkod tarama + örnek veri (datanu.xlsx) — v1.1.0 — 2026-11-21; 3. Ödeme türü (nakit/kart), rapor (Bugün/Tümü ciro, nakit/kart, indirim, hediye, en çok satanlar), CSV/Excel dışa aktarma, yedek al / yedekten yükle — v1.4.0 — 2026-11-21; 4. Kapaktan bul (📖): kapak fotoğrafından Claude ile ad/yazar/ISBN okuma + listeyle benzerlik eşleştirme — v1.5.0 — 2026-11-21
+Siradaki: 5. (isteğe bağlı fikirler) Satış fişi/yazdırma, kitap listesinde fiyat düzenleme, stok sayımı, yayınevi alanı
 Kalan: yok
 Kararlar: Veri dosyası CSV (; , veya sekme ayraçlı, UTF-8 / Windows-1254) ya da Excel (.xlsx/.xls, SheetJS CDN) olabilir.; Sütun eşleştirme ekranı vardır; seçim başlık adına göre hatırlanır.; Tek arama kutusu hem barkod okuyucu (klavye gibi çalışan, Enter ile biten) hem arama içindir.; Listede olmayan barkod: elle ad ve fiyat girilerek sepete eklenebilir (listeye eklenmez).; Tailwind CDN ilk açılışta intern
 Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
@@ -14,7 +14,7 @@ Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Fuar Satış v1.4.0</title>
+<title>Fuar Satış v1.5.0</title>
 <script src="https://cdn.tailwindcss.com/3.4.17"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
@@ -27,7 +27,7 @@ Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
 
 <header class="bg-indigo-700 text-white px-4 py-3 sticky top-0 z-20 shadow">
   <div class="max-w-3xl mx-auto flex items-center justify-between">
-    <h1 class="text-lg font-bold">📚 Fuar Satış <span class="text-xs font-normal opacity-80">v1.4.0</span></h1>
+    <h1 class="text-lg font-bold">📚 Fuar Satış <span class="text-xs font-normal opacity-80">v1.5.0</span></h1>
     <span id="hdrInfo" class="text-xs opacity-80"></span>
   </div>
 </header>
@@ -42,6 +42,8 @@ Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
           placeholder="Barkod okutun veya kitap / yazar / ISBN yazın"
           class="flex-1 min-w-0 border-2 border-indigo-200 focus:border-indigo-500 outline-none rounded-xl px-4 py-3 text-base">
         <button id="camBtn" class="shrink-0 bg-indigo-600 text-white rounded-xl px-4 text-2xl" aria-label="Kamerayla tara">📷</button>
+        <button id="coverBtn" class="hidden shrink-0 bg-pink-600 text-white rounded-xl px-4 text-2xl" aria-label="Kapaktan bul">📖</button>
+        <input id="coverFile" type="file" accept="image/*" capture="environment" class="hidden">
       </div>
       <div id="results" class="mt-2 space-y-2"></div>
       <button id="manualBtn" class="mt-2 text-sm text-indigo-700 font-semibold">➕ Listede yok mu? Elle ekle</button>
@@ -176,6 +178,19 @@ Devam: ZIP veya bu dosyayi yukle ve "devam et" yaz. Ayrinti: PROJE-DURUMU.md
     <div class="flex gap-2">
       <button id="manOk" class="flex-1 bg-emerald-600 text-white rounded-xl py-3 font-bold">Sepete ekle</button>
       <button id="manCancel" class="px-5 bg-slate-200 rounded-xl font-semibold">Vazgeç</button>
+    </div>
+  </div>
+</div>
+
+<div id="coverBox" class="hidden fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-3">
+  <div class="bg-white w-full max-w-md rounded-2xl p-4 space-y-3 max-h-[85vh] overflow-y-auto">
+    <h2 class="font-bold text-lg">📖 Kapaktan bul</h2>
+    <p id="coverRead" class="text-sm text-slate-600"></p>
+    <div id="coverList" class="space-y-2"></div>
+    <div class="flex gap-2">
+      <button id="coverManual" class="hidden flex-1 bg-indigo-600 text-white rounded-xl py-3 font-semibold">➕ Elle ekle</button>
+      <button id="coverAgain" class="hidden flex-1 bg-pink-600 text-white rounded-xl py-3 font-semibold">📖 Tekrar çek</button>
+      <button id="coverClose" class="px-5 bg-slate-200 rounded-xl font-semibold">Kapat</button>
     </div>
   </div>
 </div>
@@ -487,7 +502,7 @@ $('#expXlsx').onclick=()=>{
   saveFile('fuar-satis-'+stamp()+'.xlsx',new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
 };
 $('#bkSave').onclick=()=>{
-  const data={app:'fuar-satis',version:'1.4.0',exported:new Date().toISOString(),
+  const data={app:'fuar-satis',version:'1.5.0',exported:new Date().toISOString(),
     books:books.map(b=>({isbn:b.isbn,name:b.name,author:b.author,price:b.price})),sales:sales};
   saveFile('fuar-yedek-'+stamp()+'.json',JSON.stringify(data),'application/json');
 };
@@ -709,6 +724,108 @@ function onCode(code){
 }
 $('#camBtn').onclick=openCam;
 $('#camClose').onclick=closeCam;
+
+/* ---------- Kapaktan bul (Claude ile kapak okuma; yalnızca yayınlanmış sayfada) ---------- */
+let sampleFn=null,coverCtl=null;
+(async()=>{
+  try{
+    if(!(window.claude&&claude.use))return;
+    const sm=await claude.use('sample');
+    if(!sm)return;
+    const caps=await sm.limits().catch(()=>null);
+    if(!caps||!caps.images)return;
+    sampleFn={fn:sm,caps};
+    if(caps.images.mediaTypes&&caps.images.mediaTypes.length)$('#coverFile').accept=caps.images.mediaTypes.join(',');
+    $('#coverBtn').classList.remove('hidden');
+  }catch(e){}
+})();
+function grams(s){
+  s=' '+norm(s).replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()+' ';
+  const g=new Set();for(let i=0;i<s.length-2;i++)g.add(s.substr(i,3));return g;
+}
+function dice(a,b){let n=0;a.forEach(x=>{if(b.has(x))n++});return a.size&&b.size?2*n/(a.size+b.size):0}
+function rankBooks(t,a){
+  const gq=grams(t+' '+a),gt=grams(t);
+  return books.map(b=>{
+    b._g=b._g||grams(b.name+' '+b.author);b._gn=b._gn||grams(b.name);
+    return{b,s:Math.max(dice(gq,b._g),t?dice(gt,b._gn):0)};
+  }).filter(x=>x.s>=0.3).sort((x,y)=>y.s-x.s).slice(0,5);
+}
+function shrink(file,max){
+  max=max||1280;
+  return new Promise((res,rej)=>{
+    const url=URL.createObjectURL(file),img=new Image();
+    img.onload=()=>{
+      const k=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement('canvas');
+      c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      URL.revokeObjectURL(url);
+      c.toBlob(b=>b?res(b):rej(new Error('blob')),'image/jpeg',.85);
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error('img'))};
+    img.src=url;
+  });
+}
+function coverShow(read,html,opts){
+  opts=opts||{};
+  $('#coverBox').classList.remove('hidden');
+  $('#coverRead').innerHTML=read;$('#coverList').innerHTML=html||'';
+  $('#coverManual').classList.toggle('hidden',!opts.manual);
+  $('#coverAgain').classList.toggle('hidden',!opts.again);
+  coverPre=opts.pre||null;
+}
+let coverPre=null;
+function closeCover(){
+  if(coverCtl){coverCtl.abort();coverCtl=null}
+  $('#coverBox').classList.add('hidden');
+}
+$('#coverBtn').onclick=()=>$('#coverFile').click();
+$('#coverAgain').onclick=()=>$('#coverFile').click();
+$('#coverClose').onclick=closeCover;
+$('#coverManual').onclick=()=>{const p=coverPre;closeCover();openManual(p||{})};
+$('#coverList').addEventListener('click',e=>{
+  const b=e.target.closest('.cov');if(!b)return;
+  addBook(byKey[b.dataset.k]);closeCover();
+});
+$('#coverFile').onchange=async e=>{
+  const f=e.target.files[0];e.target.value='';
+  if(!f||!sampleFn)return;
+  coverShow('Kapak okunuyor… birkaç saniye sürebilir.','',{});
+  coverCtl=new AbortController();
+  const ctl=coverCtl;
+  try{
+    const blob=await shrink(f);
+    const opt={images:blob,signal:ctl.signal};
+    const tiers=sampleFn.caps.modelTiers;
+    if(!tiers||tiers.includes('quick'))opt.modelTier='quick';
+    const r=await sampleFn.fn.json(
+      'Ekteki fotoğraf bir kitabın kapağı (ön ya da arka). Kapakta görünen KİTAP ADINI, YAZARI ve görünüyorsa BARKOD/ISBN rakamlarını oku. '+
+      'Dil Türkçe, Kurmancî veya başka olabilir; harfleri (î, û, ê, ş, ç, ğ, ı, ö, ü) olduğu gibi yaz. '+
+      'Yanıt olarak sadece tek bir JSON nesnesi döndür: {"title":"","author":"","isbn":""}. Okuyamadığın alanı boş bırak, tahmin etme.',opt);
+    if(coverCtl!==ctl)return;
+    coverCtl=null;
+    const t=String((r&&r.title)||'').trim(),a=String((r&&r.author)||'').trim(),isb=cleanIsbn((r&&r.isbn)||'');
+    if(isb.length>=8&&byIsbn[isb]){addBook(byIsbn[isb]);closeCover();return}
+    if(!t&&!a){coverShow('Kapakta ad okunamadı. Kapağı daha yakından, düz ve net çekin.','',{again:true,manual:true});return}
+    const rk=rankBooks(t,a);
+    const read='Okunan: <b>'+esc(t||'—')+'</b>'+(a?' · '+esc(a):'');
+    const list=rk.length?rk.map(x=>`<button data-k="${esc(x.b._k)}" class="cov w-full text-left bg-slate-50 hover:bg-pink-50 rounded-xl p-3 flex items-center gap-3">
+      <div class="flex-1 min-w-0"><div class="font-semibold">${esc(x.b.name)}</div><div class="text-xs text-slate-500">${esc(x.b.author)}${x.b.author&&x.b.isbn?' · ':''}${esc(x.b.isbn)}</div></div>
+      <div class="font-bold text-indigo-700 whitespace-nowrap">${money(x.b.price)}</div></button>`).join('')
+      :'<p class="text-sm text-slate-500">Listede benzer bir kitap bulunamadı.</p>';
+    coverShow(read+(rk.length?'<br>Doğru kitaba dokunun:':''),list,{again:true,manual:true,pre:{name:t,author:a,isbn:isb}});
+  }catch(err){
+    if(coverCtl!==ctl)return;
+    coverCtl=null;
+    const c=err&&err.code;
+    if(c==='cancelled')return;
+    const msg=c==='not_granted'?'Claude kullanımına izin verilmedi.'
+      :c==='rate_limited'?'Çok sık denendi, biraz bekleyip tekrar deneyin.'
+      :(c==='image_rejected'||c==='images_unavailable')?'Fotoğraf kabul edilmedi. Tekrar çekin.'
+      :'Kapak okunamadı'+(c?' ('+c+')':'')+'.';
+    coverShow(msg,'',{again:c!=='not_granted',manual:true});
+  }
+};
 
 /* Barkod okuyucu odağı: boş bir yere dokununca arama kutusuna dön */
 document.addEventListener('click',e=>{
